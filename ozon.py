@@ -290,7 +290,7 @@ def main():
                             )
                             # --- КОНЕЦ БЛОКА Csv ---
 
-                            # --- Блок для скачивания Pdf ---
+                            # --- Блок для скачивания PDF ---
                             pdf_output_buffer = io.BytesIO()
                             reordered_pdf_writer.write(pdf_output_buffer)
                             pdf_output_buffer.seek(0)
@@ -302,12 +302,10 @@ def main():
                                 file_name = f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.pdf",
                                 mime="application/pdf"
                             )
-                            # --- КОНЕЦ БЛОКА Pdf ---
+                            # --- КОНЕЦ БЛОКА PDF ---
         except Exception as e:
                     st.error(f"Произошла ошибка при обработке файлов: {e}")
                     st.exception(e)
-
-
 
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ def sort_dataframe(df):
     priority3_mask = is_full_duplicate & (df['sort_level'] == 4.0)
     df.loc[priority3_mask, 'sort_level'] = 3.0
 
-    # --- Cортировка ---
+    # -- Cортировка --
     # Порядок:
     # 1. sort_level (1.0, 2.0, 3.0, 4.0)
     # 2. article_core (для группировки похожих ядер) - ТОЛЬКО если sort_level одинаковый

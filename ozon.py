@@ -5,6 +5,7 @@ import io
 from pypdf import PdfReader, PdfWriter
 from datetime import datetime
 
+
 def extract_order_number_prefix(order_string):
 
     if not isinstance(order_string, str):
@@ -28,43 +29,95 @@ def extract_sticker_from_order(order_number):
     else:
         return None
 
+
 def sort_dataframe(df):
+    required_cols = ['Артикул', 'Количество', 'Наименование товара']
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = ''
 
-    # 1. Сортировка по 'Количество'
-    if 'Количество' in df.columns:
+    df['Количество'] = pd.to_numeric(df['Количество'], errors='coerce').fillna(0)
 
-        df['Количество'] = pd.to_numeric(df['Количество'], errors='coerce').fillna(0)
-        # Сортируем по количеству по убыванию
-        df = df.sort_values(by='Количество', ascending=False)
-    else:
-        st.warning("Колонка 'Количество' не найдена. Сортировка по этому полю будет пропущена.")
+    original_article_case = df['Артикул'].astype(str)
 
-    # 2. Определение приоритета из 'Артикул'
-    def get_priority(row):
+    df['Артикул_lower'] = df['Артикул'].astype(str).str.lower()
+    df['Наименование товара_lower'] = df['Наименование товара'].astype(str).str.lower()
 
-        article = str(row.get('Артикул', '')).lower() # Берем артикул, приводим к строке и нижнему регистру
-        match = re.search(r'k(\d+)', article) # Ищем 'k' с последующими цифрами
+    def get_article_core(article):
+
+        match = re.search(r'([a-z]\d+)$', article)
         if match:
-            return int(match.group(1)) # Возвращаем число после 'k'
+            end_of_core = match.start()
+            return article[:end_of_core].strip()
         else:
-            return 0 # Если 'k' не найдено, присваиваем минимальный приоритет
+            return article.strip()
 
-    df['Приоритет_Сортировки'] = df.apply(get_priority, axis=1) # Создаем временную колонку для приоритета
-
-    # 3. Сортировка по приоритету, Наименованию товара и Артикулу
-
-    df['Наименование товара'] = df.get('Наименование товара', pd.Series(dtype='str')).astype(str)
-    df['Артикул'] = df.get('Артикул', pd.Series(dtype='str')).astype(str)
-
-    # Сортируем:
-    # - Приоритет (убывание)
-    # - Наименование товара (возрастание)
-    # - Артикул (возрастание)
-
-    df = df.sort_values(by=['Приоритет_Сортировки', 'Наименование товара', 'Артикул'], ascending=[False, True, True])
+    df['article_core'] = df['Артикул_lower'].apply(get_article_core)
 
 
-    df = df.drop('Приоритет_Сортировки', axis=1)
+    core_counts = df['article_core'].value_counts()
+    df['core_repeat_count'] = df['article_core'].map(core_counts)
+    sticker_counts = df['Артикул_lower'].value_counts()
+    df['full_sticker_repeat_count'] = df['Артикул_lower'].map(sticker_counts)
+    df['has_k_prefix_num'] = df['Артикул_lower'].str.contains(r'.*[k][2-5]\d*.*', na=False)
+    df['k_num_suffix'] = 0
+    k_match = df['Артикул_lower'].str.extract(r'.*[k]([2-5]\d*)$', expand=False)
+    df['k_num_suffix'] = pd.to_numeric(k_match, errors='coerce').fillna(0)
+    has_qty_greater_than_1 = df['Количество'] > 1
+    is_full_duplicate = df['full_sticker_repeat_count'] > 1
+    df['sort_level'] = 4.0
+    priority1_mask = (df['core_repeat_count'] > 1) & df['has_k_prefix_num']
+    df.loc[priority1_mask, 'sort_level'] = 1.0
+    priority2_mask = (is_full_duplicate & has_qty_greater_than_1) & (df['sort_level'] == 4.0)
+    df.loc[priority2_mask, 'sort_level'] = 2.0
+    priority3_mask = is_full_duplicate & (df['sort_level'] == 4.0)
+    df.loc[priority3_mask, 'sort_level'] = 3.0
+
+    # --- Cортировка ---
+    # Порядок:
+    # 1. sort_level (1.0, 2.0, 3.0, 4.0)
+    # 2. article_core (для группировки похожих ядер) - ТОЛЬКО если sort_level одинаковый
+    # 3. k_num_suffix (убывание) - ТОЛЬКО для sort_level 1.0
+    # 4. core_repeat_count (убывание) - для sort_level 1.0 и 3.0
+    # 5. Количество (убывание) - для sort_level 2.0 и 4.0
+    # 6. Наименование товара (А-Я) - для sort_level 4.0
+    # 7. Артикул (А-Я) - для стабильности
+
+    df = df.sort_values(
+        by=[
+            'sort_level',
+            'article_core',
+
+            'k_num_suffix',
+            'core_repeat_count',
+
+            'Количество',
+
+            'core_repeat_count',
+
+            'Наименование товара_lower',
+
+            'Артикул_lower'
+        ],
+        ascending=[
+            True,                   # sort_level (1.0 выше 4.0)
+            True,                   # article_core (А-Я)
+            False,                  # k_num_suffix (убывание)
+            False,                  # core_repeat_count (убывание)
+            False,                  # Количество (убывание)
+            False,                  # core_repeat_count (убывание) - для дубликатов
+            True,                   # Наименование товара (А-Я)
+            True                    # Артикул (А-Я)
+        ]
+    )
+
+    df['Артикул'] = original_article_case
+
+    df = df.drop([
+        'Артикул_lower', 'Наименование товара_lower', 'article_core', 'core_repeat_count',
+        'full_sticker_repeat_count', 'has_k_prefix_num', 'k_num_suffix',
+        'sort_level'
+    ], axis=1)
 
     return df
 
@@ -149,7 +202,6 @@ def main():
             else:
                 st.write("Данные CSV с извлеченными префиксами номеров заказов:")
                 st.dataframe(df_with_order_prefix)
-
                 df_sorted = sort_dataframe(df_with_order_prefix)
                 st.write("Отсортированные данные CSV:")
                 st.dataframe(df_sorted)

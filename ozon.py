@@ -189,8 +189,8 @@ def main():
                         uploaded_csv_file.seek(0)
                         df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
 
-            st.write("Исходные данные CSV:")
-            st.dataframe(df_original)
+            #st.write("Исходные данные CSV:")
+            #st.dataframe(df_original)
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
 
@@ -200,13 +200,13 @@ def main():
                 st.warning(
                     "Не найдено ни одного номера заказа в формате 'число-' в колонке 'Номер заказа' CSV файла. Проверьте формат номеров заказов.")
             else:
-                st.write("Данные CSV с извлеченными префиксами номеров заказов:")
-                st.dataframe(df_with_order_prefix)
+                #st.write("Данные CSV с извлеченными префиксами номеров заказов:")
+                #st.dataframe(df_with_order_prefix)
                 df_sorted = sort_dataframe(df_with_order_prefix)
-                st.write("Отсортированные данные CSV:")
-                st.dataframe(df_sorted)
+                #st.write("Отсортированные данные CSV:")
+                #st.dataframe(df_sorted)
 
-                st.header("3. Обработка PDF и сопоставление")
+                #st.header("3. Обработка PDF и сопоставление")
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file)
 
@@ -214,8 +214,8 @@ def main():
                     st.warning(
                         "Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: 204514 XXXXX'.")
                 else:
-                    st.write("Извлеченные стикеры из PDF (страница: стикер):")
-                    st.write(pdf_sticker_data)
+                    #st.write("Извлеченные стикеры из PDF (страница: стикер):")
+                    #st.write(pdf_sticker_data)
 
                     pdf_pages_in_csv_order = []
                     missing_pdf_pages = []
@@ -248,8 +248,8 @@ def main():
                         st.error(
                             "Не удалось найти соответствие между идентификаторами из CSV и стикерами из PDF. Переупорядочивание PDF невозможно.")
                     else:
-                        st.write("Порядок страниц PDF для нового файла (исходная_страница_PDF, стикер_из_PDF):")
-                        st.write(pdf_pages_in_csv_order)
+                        #st.write("Порядок страниц PDF для нового файла (исходная_страница_PDF, стикер_из_PDF):")
+                        #st.write(pdf_pages_in_csv_order)
 
                         reordered_pdf_writer = reorder_pdf_pages(uploaded_pdf_file, pdf_pages_in_csv_order)
 
@@ -329,17 +329,17 @@ def main():
                             )
                             # --- КОНЕЦ БЛОКА Excel ---
                             # --- Блок для скачивания Csv ---
-                            st.header("- CSV файл -")
-                            csv_output_buffer = io.StringIO()
-                            df_display.to_csv(csv_output_buffer, index=False, sep=';', encoding='utf-8-sig')
-                            csv_output_buffer.seek(0)
+                            #st.header("- CSV файл -")
+                            #csv_output_buffer = io.StringIO()
+                            #df_display.to_csv(csv_output_buffer, index=False, sep=';', encoding='utf-8-sig')
+                            #csv_output_buffer.seek(0)
 
-                            st.download_button(
-                                label="Скачать отсортированный CSV",
-                                data=csv_output_buffer.getvalue(),
-                                file_name = f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.csv",
-                                mime="text/csv"
-                            )
+                            #st.download_button(
+                            #    label="Скачать отсортированный CSV",
+                            #    data=csv_output_buffer.getvalue(),
+                            #    file_name = f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.csv",
+                            #    mime="text/csv"
+                            #)
                             # --- КОНЕЦ БЛОКА Csv ---
 
                             # --- Блок для скачивания PDF ---

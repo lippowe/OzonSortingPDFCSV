@@ -4,25 +4,24 @@ import re
 import io
 from pypdf import PdfReader, PdfWriter
 from datetime import datetime
+from openpyxl.styles import Font, Alignment, Border, Side
 
 
 def extract_order_number_prefix(order_string):
-
+    """Извлекает префикс номера заказа."""
     if not isinstance(order_string, str):
         order_string = str(order_string)
-
     match = re.search(r'^(\d+)-', order_string)
     if match:
         return match.group(1)
     else:
         return None
 
-def extract_sticker_from_order(order_number):
 
+def extract_sticker_from_order(order_number):
+    """Извлекает стикер из номера заказа."""
     if not isinstance(order_number, str):
         order_number = str(order_number)
-
-
     match = re.search(r'(\d{4})-', order_number)
     if match:
         return match.group(1)
@@ -31,20 +30,19 @@ def extract_sticker_from_order(order_number):
 
 
 def sort_dataframe(df):
-    required_cols = ['Артикул', 'Количество', 'Наименование товара']
+    """Сортирует DataFrame."""
+    required_cols = ['Артикул', 'Количество', 'Наименование товара', 'Номер отправления']
     for col in required_cols:
         if col not in df.columns:
             df[col] = ''
 
     df['Количество'] = pd.to_numeric(df['Количество'], errors='coerce').fillna(0)
-
     original_article_case = df['Артикул'].astype(str)
-
     df['Артикул_lower'] = df['Артикул'].astype(str).str.lower()
     df['Наименование товара_lower'] = df['Наименование товара'].astype(str).str.lower()
 
     def get_article_core(article):
-
+        """Извлекает основную часть артикула, убирая суффиксы."""
         match = re.search(r'([a-z]\d+)$', article)
         if match:
             end_of_core = match.start()
@@ -53,8 +51,6 @@ def sort_dataframe(df):
             return article.strip()
 
     df['article_core'] = df['Артикул_lower'].apply(get_article_core)
-
-
     core_counts = df['article_core'].value_counts()
     df['core_repeat_count'] = df['article_core'].map(core_counts)
     sticker_counts = df['Артикул_lower'].value_counts()
@@ -73,65 +69,41 @@ def sort_dataframe(df):
     priority3_mask = is_full_duplicate & (df['sort_level'] == 4.0)
     df.loc[priority3_mask, 'sort_level'] = 3.0
 
-    # --- Cортировка ---
-    # Порядок:
-    # 1. sort_level (1.0, 2.0, 3.0, 4.0)
-    # 2. article_core (для группировки похожих ядер) - ТОЛЬКО если sort_level одинаковый
-    # 3. k_num_suffix (убывание) - ТОЛЬКО для sort_level 1.0
-    # 4. core_repeat_count (убывание) - для sort_level 1.0 и 3.0
-    # 5. Количество (убывание) - для sort_level 2.0 и 4.0
-    # 6. Наименование товара (А-Я) - для sort_level 4.0
-    # 7. Артикул (А-Я) - для стабильности
-
     df = df.sort_values(
         by=[
             'sort_level',
             'article_core',
-
             'k_num_suffix',
             'core_repeat_count',
-
             'Количество',
-
             'core_repeat_count',
-
             'Наименование товара_lower',
-
             'Артикул_lower'
         ],
         ascending=[
-            True,                   # sort_level (1.0 выше 4.0)
-            True,                   # article_core (А-Я)
-            False,                  # k_num_suffix (убывание)
-            False,                  # core_repeat_count (убывание)
-            False,                  # Количество (убывание)
-            False,                  # core_repeat_count (убывание) - для дубликатов
-            True,                   # Наименование товара (А-Я)
-            True                    # Артикул (А-Я)
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+            True,
+            True
         ]
     )
 
     df['Артикул'] = original_article_case
-
-    df = df.drop([
-        'Артикул_lower', 'Наименование товара_lower', 'article_core', 'core_repeat_count',
-        'full_sticker_repeat_count', 'has_k_prefix_num', 'k_num_suffix',
-        'sort_level'
-    ], axis=1)
-
     return df
 
-# --- Функции для работы с PDF ---
 
 def extract_sticker_data_from_pdf(pdf_file):
-
+    """Извлекает данные стикеров из PDF."""
     sticker_data = {}
     try:
         reader = PdfReader(pdf_file)
         for page_num, page in enumerate(reader.pages):
             text = page.extract_text()
             if text:
-                # Ищем число после "FBS: 204514"
                 match = re.search(r"FBS:\s*204514\s*(\d+)", text)
                 if match:
                     sticker_number = match.group(1)
@@ -144,7 +116,9 @@ def extract_sticker_data_from_pdf(pdf_file):
         st.error(f"Ошибка при обработке PDF файла: {e}")
     return sticker_data
 
+
 def reorder_pdf_pages(pdf_file, page_order_mapping):
+    """Переупорядочивает страницы PDF."""
     try:
         reader = PdfReader(pdf_file)
         writer = PdfWriter()
@@ -156,17 +130,77 @@ def reorder_pdf_pages(pdf_file, page_order_mapping):
         for original_page_num, _ in page_order_mapping:
             page_to_add = pages_dict[original_page_num]
             writer.add_page(page_to_add)
-
         return writer
-
     except Exception as e:
         st.error(f"Ошибка при переупорядочивании страниц PDF: {e}")
         return None
 
-# --- Основная логика Streamlit приложения ---
+
+def get_last_4_digits(value):
+    """Извлекает последние 4 цифры из значения."""
+    if pd.isna(value):
+        return ""
+    value_str = str(value)
+    match = re.search(r'(\d{4})$', value_str)
+    if match:
+        return match.group(0)
+    else:
+        digits_only = "".join(filter(str.isdigit, value_str))
+        if len(digits_only) >= 4:
+            return digits_only[-4:]
+        else:
+            return ""
+
+
+def customize_excel(df):
+    """Настраивает Excel файл."""
+    try:
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Лист1', index=False)
+            sheet = writer.sheets['Лист1']
+
+            #
+            sheet['E1'].value = 'Кол-во'
+
+
+            for column_cells in sheet.columns:
+                length = max(len(str(cell.value)) for cell in column_cells)
+                sheet.column_dimensions[column_cells[0].column_letter].width = length + 2
+
+
+            for index, row in enumerate(df['Кол-во'], start=2):
+                cell = sheet[f'E{index}']
+                if isinstance(row, (int, float)) and row > 1:
+                    cell.font = Font(bold=True)
+
+
+            for index, row in enumerate(df['Стикер'], start=2):
+                cell = sheet[f'F{index}']
+                cell.font = Font(Font(bold=True))
+
+
+            border_style = Border(left=Side(style='thin'),
+                                  right=Side(style='thin'),
+                                  top=Side(style='thin'),
+                                  bottom=Side(style='thin'))
+
+            for index, row in enumerate(df['Код'], start=2):
+                cell = sheet[f'A{index}']
+                cell.border = border_style
+
+        excel_buffer.seek(0)
+        return excel_buffer
+
+    except Exception as e:
+        st.error(f"Произошла ошибка при настройке Excel файла: {e}")
+        return None
+
+
 def main():
+    """Основная логика приложения Streamlit."""
     st.set_page_config(layout="wide")
-    st.title("Обработка заказов: PDF и CSV")
+    st.title("Обработка заказов Озон: PDF и CSV")
 
     st.header("1. Загрузка файлов")
     uploaded_csv_file = st.file_uploader("Загрузите CSV файл с заказами", type=["csv", "txt"])
@@ -175,7 +209,6 @@ def main():
     if uploaded_csv_file and uploaded_pdf_file:
         st.success("Файлы успешно загружены!")
 
-        st.header("2. Обработка CSV")
         try:
             try:
                 df_original = pd.read_csv(uploaded_csv_file, sep=';')
@@ -189,24 +222,27 @@ def main():
                         uploaded_csv_file.seek(0)
                         df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
 
-            #st.write("Исходные данные CSV:")
-            #st.dataframe(df_original)
-
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
-
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
 
             if df_with_order_prefix.empty:
                 st.warning(
                     "Не найдено ни одного номера заказа в формате 'число-' в колонке 'Номер заказа' CSV файла. Проверьте формат номеров заказов.")
             else:
-                #st.write("Данные CSV с извлеченными префиксами номеров заказов:")
-                #st.dataframe(df_with_order_prefix)
                 df_sorted = sort_dataframe(df_with_order_prefix)
-                #st.write("Отсортированные данные CSV:")
-                #st.dataframe(df_sorted)
 
-                #st.header("3. Обработка PDF и сопоставление")
+
+                num_rows = len(df_sorted)
+                df_sorted['Код'] = pd.Series(range(1, num_rows + 1), index=df_sorted.index)
+
+
+                df_sorted = df_sorted.rename(columns={'Количество': 'Кол-во'})
+
+
+                desired_columns = ['Код', 'Номер отправления', 'Наименование товара', 'Артикул', 'Кол-во', 'Стикер']
+
+
+                df_for_excel = df_sorted[desired_columns].copy()
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file)
 
@@ -214,14 +250,10 @@ def main():
                     st.warning(
                         "Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: 204514 XXXXX'.")
                 else:
-                    #st.write("Извлеченные стикеры из PDF (страница: стикер):")
-                    #st.write(pdf_sticker_data)
-
                     pdf_pages_in_csv_order = []
                     missing_pdf_pages = []
 
                     for index, row in df_sorted.iterrows():
-
                         csv_identifier = row['Стикер']
                         found_page = None
                         for page_num, pdf_sticker_value in pdf_sticker_data.items():
@@ -233,9 +265,7 @@ def main():
                         if found_page:
                             pdf_pages_in_csv_order.append(found_page)
                         else:
-
-                            missing_pdf_pages.append(
-                                csv_identifier)
+                            missing_pdf_pages.append(csv_identifier)
 
                     if missing_pdf_pages:
                         st.warning(
@@ -248,101 +278,28 @@ def main():
                         st.error(
                             "Не удалось найти соответствие между идентификаторами из CSV и стикерами из PDF. Переупорядочивание PDF невозможно.")
                     else:
-                        #st.write("Порядок страниц PDF для нового файла (исходная_страница_PDF, стикер_из_PDF):")
-                        #st.write(pdf_pages_in_csv_order)
-
                         reordered_pdf_writer = reorder_pdf_pages(uploaded_pdf_file, pdf_pages_in_csv_order)
 
                         if reordered_pdf_writer:
                             st.success("Страницы PDF успешно переупорядочены!")
 
-                            # --- НОВЫЙ БЛОК: Подготовка и скачивание отсортированного CSV ---
-                            st.header("4. Результат")
-
-                            columns_to_display_base = ['Номер отправления', 'Наименование товара', 'Артикул', 'Количество',
-                                                       'Стикер']
-
-                            display_data_values = {}
-                            for col in columns_to_display_base:
-                                if col in df_sorted.columns:
-                                    display_data_values[col] = df_sorted[col]
-                                elif col == 'Номер отправления':
-                                    st.warning(
-                                        "Колонка 'Номер отправления' не найдена. Для отображения будет использоваться 'Артикул'.")
-                                    display_data_values['Номер отправления'] = df_sorted.get('Артикул',
-                                                                                             pd.Series(dtype='str'))
-                                else:
-                                    st.warning(f"Колонка '{col}' не найдена в данных CSV.")
-                                    display_data_values[col] = pd.Series(dtype='str')
-
-                            num_rows = len(df_sorted)
-                            display_data_values['Код'] = pd.Series(range(1, num_rows + 1), index=df_sorted.index)
-
-                            df_display = pd.DataFrame(display_data_values)
-
-                            desired_column_order = ['Код']
-                            for col in df_display.columns:
-                                if col != 'Код':
-                                    desired_column_order.append(col)
-
-                            df_display = df_display[desired_column_order]
-
-                            st.write("Отсортированные данные (выбранные колонки):")
-                            st.dataframe(df_display)
-
-                            # --- БЛОК для скачивания Excel ---
+                            # Подготовка и скачивание отсортированного Excel
                             st.header("- Лист подбора(Excel) -")
 
-                            def get_last_4_digits(value):
-                                if pd.isna(value):
-                                    return ""
-
-                                value_str = str(value)
-
-                                match = re.search(r'(\d{4})$', value_str)
-
-                                if match:
-                                    return match.group(0)
-                                else:
-
-                                    digits_only = "".join(filter(str.isdigit, value_str))
-                                    if len(digits_only) >= 4:
-                                        return digits_only[-4:]
-                                    else:
-                                        return ""
-
-                            df_for_excel = df_display.copy()
+                            # Извлекаем последние 4 цифры стикера
                             df_for_excel['Стикер'] = df_for_excel['Стикер'].apply(get_last_4_digits)
 
-                            excel_output_buffer = io.BytesIO()
+                            excel_buffer = customize_excel(df_for_excel)
 
-                            df_for_excel.to_excel(excel_output_buffer, index=False,
-                                                  sheet_name='Последние 4 цифры стикера')
+                            if excel_buffer:
+                                st.download_button(
+                                    label="Скачать отсортированный Excel файл",
+                                    data=excel_buffer.getvalue(),
+                                    file_name=f"sorted_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
 
-                            excel_output_buffer.seek(0)
-
-                            st.download_button(
-                                label="Скачать отсортированный Excel",
-                                data=excel_output_buffer,
-                                file_name = f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                            # --- КОНЕЦ БЛОКА Excel ---
-                            # --- Блок для скачивания Csv ---
-                            #st.header("- CSV файл -")
-                            #csv_output_buffer = io.StringIO()
-                            #df_display.to_csv(csv_output_buffer, index=False, sep=';', encoding='utf-8-sig')
-                            #csv_output_buffer.seek(0)
-
-                            #st.download_button(
-                            #    label="Скачать отсортированный CSV",
-                            #    data=csv_output_buffer.getvalue(),
-                            #    file_name = f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.csv",
-                            #    mime="text/csv"
-                            #)
-                            # --- КОНЕЦ БЛОКА Csv ---
-
-                            # --- Блок для скачивания PDF ---
+                            # Блок для скачивания PDF
                             pdf_output_buffer = io.BytesIO()
                             reordered_pdf_writer.write(pdf_output_buffer)
                             pdf_output_buffer.seek(0)
@@ -351,15 +308,13 @@ def main():
                             st.download_button(
                                 label="Скачать Стикеры",
                                 data=pdf_output_buffer,
-                                file_name = f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.pdf",
+                                file_name=f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.pdf",
                                 mime="application/pdf"
                             )
-                            # --- КОНЕЦ БЛОКА PDF ---
         except Exception as e:
-                    st.error(f"Произошла ошибка при обработке файлов: {e}")
-                    st.exception(e)
+            st.error(f"Произошла ошибка при обработке файлов: {e}")
+            st.exception(e)
 
 
 if __name__ == "__main__":
- main()
-
+    main()

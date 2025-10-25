@@ -255,6 +255,9 @@ def main():
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
 
+            st.write("Исходные данные")
+            st.dataframe(df_original)
+
             if df_with_order_prefix.empty:
                 st.warning(
                     "Не найдено ни одного номера заказа в формате 'число-' в колонке 'Номер заказа' CSV файла. Проверьте формат номеров заказов.")

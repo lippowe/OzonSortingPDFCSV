@@ -256,7 +256,7 @@ def main():
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
 
             st.write("Исходные данные")
-            st.write(df_sorted)
+            st.dataframe(df_sorted)
 
             if df_with_order_prefix.empty:
                 st.warning(

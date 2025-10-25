@@ -265,6 +265,9 @@ def main():
                 # Шаг 2: Применяем основную сложную сортировку к уже сгруппированным данным
                 df_sorted = sort_dataframe(df_sorted_by_shipment_sticker)
 
+                st.write("Отсортированные данные Csv:")
+                st.dataframe(df_sorted)
+                
                 # !!! КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Сбрасываем индекс после всех сортировок
                 df_sorted = df_sorted.reset_index(drop=True)
 
@@ -279,7 +282,7 @@ def main():
 
                 desired_columns = ['Код', 'Номер отправления для отображения', 'Наименование товара', 'Артикул',
                                    'Кол-во', 'Стикер для отображения']
-                df_for_excel = df_sorted[desired_columns].copy()
+                df_for_excel = df_sorted[desired_columns].copy
 
                 # Переименовываем столбцы для Excel
                 df_for_excel = df_for_excel.rename(columns={

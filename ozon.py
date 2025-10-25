@@ -122,7 +122,6 @@ def sort_dataframe(df):
             True,
             True
         ],
-        na_position='last'
     )
 
     df['Артикул'] = original_article_case  # Восстанавливаем оригинальный регистр
@@ -282,14 +281,14 @@ def main():
                                    'Кол-во', 'Стикер для отображения']
                 df_for_excel = df_sorted[desired_columns].copy
 
-                st.write("Отсортированные данные Csv:")
-                st.dataframe(df_sorted)
-
                 # Переименовываем столбцы для Excel
                 df_for_excel = df_for_excel.rename(columns={
                     'Номер отправления для отображения': 'Номер отправления',
                     'Стикер для отображения': 'Стикер'
                 })
+
+                st.write("dataframe")|
+                st.write(df_for_excel)
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file)
 

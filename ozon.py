@@ -121,7 +121,8 @@ def sort_dataframe(df):
             False,
             True,
             True
-        ]
+        ],
+        na_position='last'
     )
 
     df['Артикул'] = original_article_case  # Восстанавливаем оригинальный регистр

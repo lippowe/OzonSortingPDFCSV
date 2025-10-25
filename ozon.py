@@ -28,16 +28,15 @@ def extract_sticker_from_order(order_number):
     else:
         return None
 
-
 def sort_dataframe(df):
-    """Сортирует DataFrame."""
-    required_cols = ['Артикул', 'Количество', 'Наименование товара', 'Номер отправления']
+    """Сортирует DataFrame в соответствии с заданными приоритетами."""
+    required_cols = ['Артикул', 'Количество', 'Наименование товара', 'Номер отправления', 'Стикер']
     for col in required_cols:
         if col not in df.columns:
             df[col] = ''
 
     df['Количество'] = pd.to_numeric(df['Количество'], errors='coerce').fillna(0)
-    original_article_case = df['Артикул'].astype(str)
+    original_article_case = df['Артикул'].astype(str)  # Сохраняем оригинальный регистр
     df['Артикул_lower'] = df['Артикул'].astype(str).str.lower()
     df['Наименование товара_lower'] = df['Наименование товара'].astype(str).str.lower()
 
@@ -55,25 +54,53 @@ def sort_dataframe(df):
     df['core_repeat_count'] = df['article_core'].map(core_counts)
     sticker_counts = df['Артикул_lower'].value_counts()
     df['full_sticker_repeat_count'] = df['Артикул_lower'].map(sticker_counts)
-    df['has_k_prefix_num'] = df['Артикул_lower'].str.contains(r'.*[k][2-5]\d*.*', na=False)
+
+    # Создаем новые признаки для приоритетов
+
+    # Считаем повторения "Номер отправления" и "Стикер"
+    df['shipment_sticker_key'] = df['Номер отправления'].astype(str) + '_' + df['Стикер'].astype(str)
+    shipment_sticker_counts = df['shipment_sticker_key'].value_counts()
+    df['shipment_sticker_repeated'] = df['shipment_sticker_key'].map(shipment_sticker_counts)
+    df['shipment_sticker_repeated_flag'] = df['shipment_sticker_repeated'] > 1  # Flag для сортировки
+
+    df['has_k_prefix_num'] = df['Артикул_lower'].str.contains(r'.*[k][2-5]\d*.*', na=False) #Товары с артикулом, содержащим k или K с числом от 2 до 5
+    df['qty_greater_than_1'] = df['Количество'] > 1 #Товары, где количество больше 1.
+    df['article_repeated'] = df['full_sticker_repeat_count'] > 1 #Товары, где повторяется артикул.
+
+
+    # Считаем повторения "Наименование товара" и "Артикул"
+    df['name_article_key'] = df['Наименование товара_lower'].astype(str) + '_' + df['Артикул_lower'].astype(str)
+    name_article_counts = df['name_article_key'].value_counts()
+    df['name_article_repeated'] = df['name_article_key'].map(name_article_counts)
+
+    # Извлекаем число после k/K для сортировки
     df['k_num_suffix'] = 0
     k_match = df['Артикул_lower'].str.extract(r'.*[k]([2-5]\d*)$', expand=False)
     df['k_num_suffix'] = pd.to_numeric(k_match, errors='coerce').fillna(0)
-    has_qty_greater_than_1 = df['Количество'] > 1
-    is_full_duplicate = df['full_sticker_repeat_count'] > 1
+
+    # Инициализируем столбец 'sort_level' значением по умолчанию
     df['sort_level'] = 4.0
-    priority1_mask = (df['core_repeat_count'] > 1) & df['has_k_prefix_num']
+
+    # Применяем маски для изменения 'sort_level'
+    priority1_mask = (df['core_repeat_count'] > 1) & (df['has_k_prefix_num'])
     df.loc[priority1_mask, 'sort_level'] = 1.0
-    priority2_mask = (is_full_duplicate & has_qty_greater_than_1) & (df['sort_level'] == 4.0)
+    priority2_mask = (df['full_sticker_repeat_count'] > 1) & (df['qty_greater_than_1']) & (df['sort_level'] == 4.0)
     df.loc[priority2_mask, 'sort_level'] = 2.0
-    priority3_mask = is_full_duplicate & (df['sort_level'] == 4.0)
+    priority3_mask = (df['full_sticker_repeat_count'] > 1) & (df['sort_level'] == 4.0)
     df.loc[priority3_mask, 'sort_level'] = 3.0
 
+
+    # Сортируем DataFrame в соответствии с приоритетами
     df = df.sort_values(
         by=[
-            'sort_level',
+            'shipment_sticker_repeated_flag',  # Приоритет 1: Повторение "Номер отправления" и "Стикер"
+            'has_k_prefix_num',             # Приоритет 2: Наличие k/K с числом
+            'k_num_suffix',               # Сортировка по номеру после k/K (убывание)
+            'qty_greater_than_1',            # Приоритет 3: Количество > 1
+            'article_repeated',              # Приоритет 4: Повторяющийся артикул
+            'name_article_repeated',         # Приоритет 5: Повторение "Наименование товара" и "Артикул" (убывание)
+            'sort_level',                    # Остальные критерии из вашего кода
             'article_core',
-            'k_num_suffix',
             'core_repeat_count',
             'Количество',
             'core_repeat_count',
@@ -81,9 +108,14 @@ def sort_dataframe(df):
             'Артикул_lower'
         ],
         ascending=[
+            False,                          # 'shipment_sticker_repeated_flag': Сначала True (повторяется)
+            False,                          # 'has_k_prefix_num': Сначала True (есть k/K)
+            False,                          # 'k_num_suffix':  Убывание (сначала больше)
+            False,                          # 'qty_greater_than_1': Сначала True (Количество > 1)
+            False,                          # 'article_repeated': Сначала True (повторяется)
+            False,                          # 'name_article_repeated': По убыванию (сначала больше)
+            True,                           # 'sort_level':  По возрастанию
             True,
-            True,
-            False,
             False,
             False,
             False,
@@ -92,8 +124,9 @@ def sort_dataframe(df):
         ]
     )
 
-    df['Артикул'] = original_article_case
+    df['Артикул'] = original_article_case  # Восстанавливаем оригинальный регистр
     return df
+
 
 
 def extract_sticker_data_from_pdf(pdf_file):
@@ -152,33 +185,30 @@ def get_last_4_digits(value):
             return ""
 
 
-def customize_excel(df):
+def customize_excel(df, combine_shipments=False):
     """Настраивает Excel файл."""
     try:
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Лист1', index=False)
-            sheet = writer.sheets['Лист1']
+            sheet_name = 'Лист1'
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            sheet = writer.sheets[sheet_name]
 
-            #
+            # Auto-adjust column widths
             sheet['E1'].value = 'Кол-во'
-
 
             for column_cells in sheet.columns:
                 length = max(len(str(cell.value)) for cell in column_cells)
                 sheet.column_dimensions[column_cells[0].column_letter].width = length + 2
-
 
             for index, row in enumerate(df['Кол-во'], start=2):
                 cell = sheet[f'E{index}']
                 if isinstance(row, (int, float)) and row > 1:
                     cell.font = Font(bold=True)
 
-
             for index, row in enumerate(df['Стикер'], start=2):
                 cell = sheet[f'F{index}']
                 cell.font = Font(Font(bold=True))
-
 
             border_style = Border(left=Side(style='thin'),
                                   right=Side(style='thin'),
@@ -209,7 +239,7 @@ def main():
     if uploaded_csv_file and uploaded_pdf_file:
         st.success("Файлы успешно загружены!")
 
-        try:
+        try:  # Обернули все в try except
             try:
                 df_original = pd.read_csv(uploaded_csv_file, sep=';')
             except Exception:
@@ -229,20 +259,33 @@ def main():
                 st.warning(
                     "Не найдено ни одного номера заказа в формате 'число-' в колонке 'Номер заказа' CSV файла. Проверьте формат номеров заказов.")
             else:
-                df_sorted = sort_dataframe(df_with_order_prefix)
+                # Шаг 1: Сортировка для группировки одинаковых номеров отправления и стикеров
+                df_sorted_by_shipment_sticker = df_with_order_prefix.copy()
 
+                # Шаг 2: Применяем основную сложную сортировку к уже сгруппированным данным
+                df_sorted = sort_dataframe(df_sorted_by_shipment_sticker)
+
+                # !!! КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Сбрасываем индекс после всех сортировок
+                df_sorted = df_sorted.reset_index(drop=True)
+
+                # Создаем столбцы для значений, которые будут отображаться в объединенных ячейках
+                df_sorted['Номер отправления для отображения'] = df_sorted['Номер отправления']
+                df_sorted['Стикер для отображения'] = df_sorted['Стикер']
 
                 num_rows = len(df_sorted)
                 df_sorted['Код'] = pd.Series(range(1, num_rows + 1), index=df_sorted.index)
 
-
                 df_sorted = df_sorted.rename(columns={'Количество': 'Кол-во'})
 
-
-                desired_columns = ['Код', 'Номер отправления', 'Наименование товара', 'Артикул', 'Кол-во', 'Стикер']
-
-
+                desired_columns = ['Код', 'Номер отправления для отображения', 'Наименование товара', 'Артикул',
+                                   'Кол-во', 'Стикер для отображения']
                 df_for_excel = df_sorted[desired_columns].copy()
+
+                # Переименовываем столбцы для Excel
+                df_for_excel = df_for_excel.rename(columns={
+                    'Номер отправления для отображения': 'Номер отправления',
+                    'Стикер для отображения': 'Стикер'
+                })
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file)
 
@@ -272,7 +315,7 @@ def main():
                             f"Следующие идентификаторы (префиксы заказов) из отсортированного CSV не были найдены в PDF: {', '.join(missing_pdf_pages)}. Страницы с соответствующими стикерами не будут включены в новый PDF.")
                     if pdf_sticker_data:
                         st.info(
-                            f"В PDF файле остались стикеры, которые не были найдены в CSV: {', '.join(pdf_sticker_data.values())}. Эти страницы не будут использованы.")
+                            f"Найдены заказы одному клиенту, их номер заказов: {', '.join(pdf_sticker_data.values())}. Эти страницы не будут использованы.")
 
                     if not pdf_pages_in_csv_order:
                         st.error(
@@ -289,13 +332,14 @@ def main():
                             # Извлекаем последние 4 цифры стикера
                             df_for_excel['Стикер'] = df_for_excel['Стикер'].apply(get_last_4_digits)
 
-                            excel_buffer = customize_excel(df_for_excel)
+                            # Указываем combine_shipments=True
+                            excel_buffer = customize_excel(df_for_excel, combine_shipments=True)
 
                             if excel_buffer:
                                 st.download_button(
                                     label="Скачать отсортированный Excel файл",
                                     data=excel_buffer.getvalue(),
-                                    file_name=f"sorted_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    file_name=f"Repeats_Ozon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                 )
 
@@ -311,7 +355,8 @@ def main():
                                 file_name=f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.pdf",
                                 mime="application/pdf"
                             )
-        except Exception as e:
+
+        except Exception as e:  # Обработали все исключения
             st.error(f"Произошла ошибка при обработке файлов: {e}")
             st.exception(e)
 

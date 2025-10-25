@@ -287,8 +287,7 @@ def main():
                     'Стикер для отображения': 'Стикер'
                 })
 
-                st.write("dataframe")
-                st.write(df_for_excel)
+                
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file)
 

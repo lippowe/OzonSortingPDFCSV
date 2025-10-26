@@ -200,15 +200,17 @@ def customize_excel(df, df_repeats, fbs_option):
             sheet = writer.sheets[sheet_name]
 
             # === Заголовки и инфо ===
-            sheet['B1'] = f'Лист подбора {fbs_option}'
+            sheet['B1'] = f'Лист подбора OZON'
             sheet['B1'].font = Font(bold=True, size=16)
+
+            sheet['B2'] = f'Склад: {fbs_option}'
+            sheet['B2'].font = Font(bold=True)
 
             sheet['B3'] = 'Дата: '+datetime.now().strftime("%Y-%m-%d %H:%M")
             sheet['B3'].font = Font(bold=True)
 
             sheet['B4'] = f'Количество товаров: {+ len(df) + len(df_repeats)}'
             sheet['B4'].font = Font(bold=True)
-
             # === Стилизация ===
             header_font = Font(bold=True)
             header_alignment = Alignment(horizontal='center')

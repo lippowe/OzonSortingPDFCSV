@@ -265,7 +265,7 @@ def customize_excel(df, df_repeats, fbs_option, num_pdf_pages):
 
         excel_buffer.seek(0)
         return excel_buffer
-
+    
     except Exception as e:
         st.error(f"Произошла ошибка при настройке Excel файла: {e}")
         st.error(f"Тип ошибки: {type(e)}")

@@ -287,16 +287,19 @@ def main():
 
         try:
             try:
-                df_original = pd.read_csv(uploaded_csv_file, sep=';')
+                df_original = pd.read_csv(uploaded_csv_file, sep=';', encoding='utf-8')
             except Exception:
                 try:
-                    df_original = pd.read_csv(uploaded_csv_file, sep=',')
+                    df_original = pd.read_csv(uploaded_csv_file, sep=',', encoding='utf-8')
                 except Exception:
                     try:
-                        df_original = pd.read_csv(uploaded_csv_file, sep='\t')
+                        df_original = pd.read_csv(uploaded_csv_file, sep='\t', encoding='utf-8')
                     except Exception:
                         uploaded_csv_file.seek(0)
                         df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('utf-8')))
+                        if df_original is not None:
+                            st.write("Dataframe после чтения CSV:")
+                            st.write(df_original)
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()

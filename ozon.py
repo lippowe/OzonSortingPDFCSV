@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import re
@@ -183,7 +184,7 @@ def get_last_4_digits(value):
             return ""
 
 
-def customize_excel(df, df_repeats, fbs_option):
+def customize_excel(df, df_repeats, fbs_option, num_pdf_pages):
     """Настраивает Excel файл."""
     try:
         excel_buffer = io.BytesIO()
@@ -204,8 +205,9 @@ def customize_excel(df, df_repeats, fbs_option):
             sheet['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
             sheet['B3'].font = Font(bold=True)
 
-            sheet['B4'] = f'Количество товаров: {+ len(df) + len(df_repeats)}'
+            sheet['B4'] = f'Количество отправлений: {num_pdf_pages}'
             sheet['B4'].font = Font(bold=True)
+
             # === Стилизация ===
             header_font = Font(bold=True)
             header_alignment = Alignment(horizontal='center')
@@ -241,8 +243,19 @@ def customize_excel(df, df_repeats, fbs_option):
             # === Лист 2: Повторы ===
             if not df_repeats.empty:
                 repeats_sheet_name = 'Повторы'
-                df_repeats.to_excel(writer, sheet_name=repeats_sheet_name, index=False)
+                df_repeats.to_excel(writer, sheet_name=repeats_sheet_name, index=False, startrow=1)
                 repeats_sheet = writer.sheets[repeats_sheet_name]
+
+                repeats_sheet['B1'] = 'Соединённые заказы одному клиенту'
+                repeats_sheet['B1'].font = Font(bold=True, size=16)
+
+                grouped = df_repeats.groupby(['Номер отправления', 'Стикер'])
+                for name, group in grouped:
+                    for i in range(1, len(group)):
+                        index = group.index[i]
+                        excel_row_number = df_repeats.index.get_loc(index) + 3
+
+                        repeats_sheet.cell(row=excel_row_number, column=6).value = None
 
                 for column_cells in repeats_sheet.columns:
                     max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
@@ -260,7 +273,6 @@ def customize_excel(df, df_repeats, fbs_option):
         st.exception(e)
         return None
 
-
 def read_csv_with_encoding(uploaded_csv_file):
     """
     Пытается прочитать CSV файл с разными кодировками и определяет столбец 'Наименование товара'.
@@ -273,7 +285,7 @@ def read_csv_with_encoding(uploaded_csv_file):
         for encoding in encodings_to_try:
             try:
                 df = pd.read_csv(uploaded_csv_file, sep=sep, encoding=encoding)
-                st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
+                #st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
 
                 name_column = None
                 for col in possible_name_columns:
@@ -283,16 +295,16 @@ def read_csv_with_encoding(uploaded_csv_file):
 
                 if name_column is None:
                     st.error(f"Не найден столбец с наименованием товара. Проверены: {possible_name_columns}")
-                    st.write("Список столбцов в DataFrame:")
+                    #st.write("Список столбцов в DataFrame:")
                     st.write(df.columns.tolist())
                     return None
 
                 if name_column != 'Наименование товара':
                     df = df.rename(columns={name_column: 'Наименование товара'})
-                    st.write(f"Столбец '{name_column}' переименован в 'Наименование товара'")
+                    #st.write(f"Столбец '{name_column}' переименован в 'Наименование товара'")
 
-                st.write("Список столбцов в DataFrame:")
-                st.write(df.columns.tolist())
+                #st.write("Список столбцов в DataFrame:")
+                #st.write(df.columns.tolist())
                 return df
 
             except UnicodeDecodeError:
@@ -331,7 +343,6 @@ def read_csv_with_encoding(uploaded_csv_file):
         st.error(f"Не удалось прочитать CSV файл ни с одной из предложенных кодировок/разделителей. Ошибка: {e}")
         return None
 
-
 def main():
     """Основная логика приложения Streamlit."""
     st.set_page_config(layout="wide")
@@ -353,9 +364,8 @@ def main():
             if df_original is None:
                 st.stop()
 
-            st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
-            st.write(
-                f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
+            #st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
+            #st.write(f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
             df_original['Наименование товара'] = df_original['Наименование товара'].astype(str).fillna('')
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
@@ -403,13 +413,17 @@ def main():
                 })
 
                 # ==Отладочный вывод DataFrame перед Excel==
-                st.write("DataFrame основной перед функцией customize_excel:")
-                st.write(df_for_excel)
+                #st.write("DataFrame основной перед функцией customize_excel:")
+                #st.write(df_for_excel)
 
-                st.write("DataFrame повторов перед функцией customize_excel:")
-                st.write(df_repeats_for_excel)
+                #st.write("DataFrame повторов перед функцией customize_excel:")
+                #st.write(df_repeats_for_excel)
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file, fbs_prefix)
+
+                reader = PdfReader(uploaded_pdf_file)
+                num_pdf_pages = len(reader.pages)
+
                 if not pdf_sticker_data:
                     st.warning(
                         f"Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: {fbs_prefix} XXXXX'.")
@@ -447,7 +461,7 @@ def main():
 
                     if missing_pdf_pages:
                         st.warning(
-                            f"Следующие идентификаторы (префиксы заказов) из отсортированного CSV не были найдены в PDF: {', '.join(missing_pdf_pages)}. Страницы с соответствующими стикерами не будут включены в новый PDF.")
+                            f"Следующие заказы из подбора листа отмечены как соединёнными: {', '.join(missing_pdf_pages)}. Список будет выписан на новый лист (Повторы) в excel файле.")
                     if pdf_sticker_data:
                         st.info(
                             f"Найдены заказы одному клиенту, их номер заказов: {', '.join(pdf_sticker_data.values())}. Эти страницы не будут использованы.")
@@ -459,14 +473,15 @@ def main():
                         reordered_pdf_writer = reorder_pdf_pages(uploaded_pdf_file, pdf_pages_in_csv_order)
 
                         if reordered_pdf_writer:
-                            st.success("Страницы PDF успешно переупорядочены!")
+                            st.success("Стикеры успешно переупорядочены!")
 
                             st.header("- Лист подбора(Excel) -")
 
                             df_for_excel['Стикер'] = df_for_excel['Стикер'].apply(get_last_4_digits)
                             df_repeats_for_excel['Стикер'] = df_repeats_for_excel['Стикер'].apply(get_last_4_digits)
 
-                            excel_buffer = customize_excel(df_for_excel, df_repeats_for_excel, fbs_option)
+                            excel_buffer = customize_excel(df_for_excel, df_repeats_for_excel, fbs_option,
+                                                           num_pdf_pages)
                             # Блок для скачивания Excel
                             if excel_buffer:
                                 st.download_button(

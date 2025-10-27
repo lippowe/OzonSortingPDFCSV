@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import re
@@ -7,7 +6,6 @@ from pypdf import PdfReader, PdfWriter
 from datetime import datetime
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
-
 
 FBS_PREFIXES = {
     "Озон": "204514",
@@ -65,7 +63,6 @@ def sort_dataframe(df):
     sticker_counts = df['Артикул_lower'].value_counts()
     df['full_sticker_repeat_count'] = df['Артикул_lower'].map(sticker_counts)
 
-
     df['shipment_sticker_key'] = df['Номер отправления'].astype(str) + '_' + df['Стикер'].astype(str)
     shipment_sticker_counts = df['shipment_sticker_key'].value_counts()
     df['shipment_sticker_repeated'] = df['shipment_sticker_key'].map(shipment_sticker_counts)
@@ -75,11 +72,9 @@ def sort_dataframe(df):
     df['qty_greater_than_1'] = df['Количество'] > 1
     df['article_repeated'] = df['full_sticker_repeat_count'] > 1
 
-
     df['name_article_key'] = df['Наименование товара_lower'].astype(str) + '_' + df['Артикул_lower'].astype(str)
     name_article_counts = df['name_article_key'].value_counts()
     df['name_article_repeated'] = df['name_article_key'].map(name_article_counts)
-
 
     df['k_num_suffix'] = 0
     k_match = df['Артикул_lower'].str.extract(r'.*[k]([2-6]\d*)$', expand=False)
@@ -96,12 +91,12 @@ def sort_dataframe(df):
     df = df.sort_values(
         by=[
             'shipment_sticker_repeated_flag',  # Приоритет 1: Повторение "Номер отправления" и "Стикер"
-            'has_k_prefix_num',             # Приоритет 2: Наличие k/K с числом
-            'k_num_suffix',               # Сортировка по номеру после k/K (убывание)
-            'qty_greater_than_1',            # Приоритет 3: Количество > 1
-            'article_repeated',              # Приоритет 4: Повторяющийся артикул
-            'name_article_repeated',         # Приоритет 5: Повторение "Наименование товара" и "Артикул" (убывание)
-            'sort_level',                    # Остальные критерии
+            'has_k_prefix_num',  # Приоритет 2: Наличие k/K с числом
+            'k_num_suffix',  # Сортировка по номеру после k/K (убывание)
+            'qty_greater_than_1',  # Приоритет 3: Количество > 1
+            'article_repeated',  # Приоритет 4: Повторяющийся артикул
+            'name_article_repeated',  # Приоритет 5: Повторение "Наименование товара" и "Артикул" (убывание)
+            'sort_level',  # Остальные критерии
             'article_core',
             'core_repeat_count',
             'Количество',
@@ -110,13 +105,13 @@ def sort_dataframe(df):
             'Артикул_lower'
         ],
         ascending=[
-            False,                          # 'shipment_sticker_repeated_flag': Сначала True (повторяется)
-            False,                          # 'has_k_prefix_num': Сначала True (есть k/K)
-            False,                          # 'k_num_suffix':  Убывание (сначала больше)
-            False,                          # 'qty_greater_than_1': Сначала True (Количество > 1)
-            False,                          # 'article_repeated': Сначала True (повторяется)
-            False,                          # 'name_article_repeated': По убыванию (сначала больше)
-            True,                           # 'sort_level':  По возрастанию
+            False,  # 'shipment_sticker_repeated_flag': Сначала True (повторяется)
+            False,  # 'has_k_prefix_num': Сначала True (есть k/K)
+            False,  # 'k_num_suffix':  Убывание (сначала больше)
+            False,  # 'qty_greater_than_1': Сначала True (Количество > 1)
+            False,  # 'article_repeated': Сначала True (повторяется)
+            False,  # 'name_article_repeated': По убыванию (сначала больше)
+            True,  # 'sort_level':  По возрастанию
             True,
             False,
             False,
@@ -206,7 +201,7 @@ def customize_excel(df, df_repeats, fbs_option):
             sheet['B2'] = f'Склад: {fbs_option}'
             sheet['B2'].font = Font(bold=True)
 
-            sheet['B3'] = 'Дата: '+datetime.now().strftime("%Y-%m-%d %H:%M")
+            sheet['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
             sheet['B3'].font = Font(bold=True)
 
             sheet['B4'] = f'Количество товаров: {+ len(df) + len(df_repeats)}'
@@ -216,12 +211,10 @@ def customize_excel(df, df_repeats, fbs_option):
             header_alignment = Alignment(horizontal='center')
             data_alignment = Alignment(horizontal='left')
 
-
             for col_num in range(1, df.shape[1] + 1):
                 cell = sheet.cell(row=6, column=col_num)
                 cell.font = header_font
                 cell.alignment = header_alignment
-
 
             for row_num in range(7, sheet.max_row + 1):
                 for col_num in range(1, df.shape[1] + 1):
@@ -241,7 +234,7 @@ def customize_excel(df, df_repeats, fbs_option):
                         max_length = max(max_length, len(str(cell.value)))
                 header_cell = sheet[column_letter + '6']
                 if header_cell.value is not None:
-                      max_length = max(max_length, len(str(header_cell.value)))
+                    max_length = max(max_length, len(str(header_cell.value)))
 
                 sheet.column_dimensions[column_letter].width = max_length + 2
 
@@ -250,7 +243,6 @@ def customize_excel(df, df_repeats, fbs_option):
                 repeats_sheet_name = 'Повторы'
                 df_repeats.to_excel(writer, sheet_name=repeats_sheet_name, index=False)
                 repeats_sheet = writer.sheets[repeats_sheet_name]
-
 
                 for column_cells in repeats_sheet.columns:
                     max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
@@ -271,10 +263,11 @@ def customize_excel(df, df_repeats, fbs_option):
 
 def read_csv_with_encoding(uploaded_csv_file):
     """
-    Пытается прочитать CSV файл с разными кодировками.
+    Пытается прочитать CSV файл с разными кодировками и определяет столбец 'Наименование товара'.
     """
     encodings_to_try = ['utf-8', 'cp1251', 'latin1']
     sep_options = [';', ',', '\t']
+    possible_name_columns = ['Наименование товара', 'Название товара']
 
     for sep in sep_options:
         for encoding in encodings_to_try:
@@ -282,46 +275,67 @@ def read_csv_with_encoding(uploaded_csv_file):
                 df = pd.read_csv(uploaded_csv_file, sep=sep, encoding=encoding)
                 st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
 
-                # === Добавьте эту диагностическую информацию ===
+                name_column = None
+                for col in possible_name_columns:
+                    if col in df.columns:
+                        name_column = col
+                        break
+
+                if name_column is None:
+                    st.error(f"Не найден столбец с наименованием товара. Проверены: {possible_name_columns}")
+                    st.write("Список столбцов в DataFrame:")
+                    st.write(df.columns.tolist())
+                    return None
+
+                if name_column != 'Наименование товара':
+                    df = df.rename(columns={name_column: 'Наименование товара'})
+                    st.write(f"Столбец '{name_column}' переименован в 'Наименование товара'")
+
                 st.write("Список столбцов в DataFrame:")
-                st.write(df.columns.tolist()) # Выводим список столбцов
-
-                if 'Наименование товара' not in df.columns:
-                    st.error("Столбец 'Наименование товара' не найден!")
-                    return None # Важно: возвращаем None, если столбца нет
-
+                st.write(df.columns.tolist())
                 return df
+
             except UnicodeDecodeError:
                 st.write(f"Ошибка UnicodeDecodeError при чтении с кодировкой '{encoding}' и разделителем '{sep}'")
-                pass  # Попробуем следующую кодировку
+                pass
             except Exception as e:
                 st.write(f"Другая ошибка при чтении с разделителем '{sep}' и кодировкой '{encoding}': {e}")
                 pass
 
-    # Если ни одна из попыток не удалась, пробуем через StringIO и cp1251 (последний шанс)
     try:
         uploaded_csv_file.seek(0)
         df = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
 
-        # === Добавьте эту диагностическую информацию ===
+        name_column = None
+        for col in possible_name_columns:
+            if col in df.columns:
+                name_column = col
+                break
+
+        if name_column is None:
+            st.error(f"Не найден столбец с наименованием товара (StringIO). Проверены: {possible_name_columns}")
+            st.write("Список столбцов в DataFrame (StringIO):")
+            st.write(df.columns.tolist())
+            return None
+
+        if name_column != 'Наименование товара':
+            df = df.rename(columns={name_column: 'Наименование товара'})
+            st.write(f"Столбец '{name_column}' переименован в 'Наименование товара' (StringIO)")
+
         st.write("Файл успешно прочитан с использованием StringIO и кодировки 'cp1251'")
         st.write("Список столбцов в DataFrame (StringIO):")
-        st.write(df.columns.tolist()) # Выводим список столбцов
-
-        if 'Наименование товара' not in df.columns:
-            st.error("Столбец 'Наименование товара' не найден (StringIO)!")
-            return None  # Важно: возвращаем None, если столбца нет
+        st.write(df.columns.tolist())
         return df
 
     except Exception as e:
         st.error(f"Не удалось прочитать CSV файл ни с одной из предложенных кодировок/разделителей. Ошибка: {e}")
         return None
 
+
 def main():
     """Основная логика приложения Streamlit."""
     st.set_page_config(layout="wide")
     st.title("Обработка заказов Озон: PDF и CSV")
-
 
     fbs_option = st.selectbox("Выберите тип FBS", list(FBS_PREFIXES.keys()))
     fbs_prefix = FBS_PREFIXES[fbs_option]
@@ -337,20 +351,12 @@ def main():
             df_original = read_csv_with_encoding(uploaded_csv_file)
 
             if df_original is None:
-                st.stop()  # Прекращаем выполнение, если не удалось прочитать CSV
+                st.stop()
 
-            # Проверка наличия столбца и переименование (если необходимо)
-            if 'Наименование товара' not in df_original.columns:
-                # Пример: переименование столбца "Product Name" в "Наименование товара"
-                if 'Product Name' in df_original.columns:
-                    df_original = df_original.rename(columns={'Product Name': 'Наименование товара'})
-                else:
-                    st.error("Столбец 'Наименование товара' не найден, и не удалось найти альтернативный столбец.")
-                    st.stop()
             st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
-            st.write(f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
+            st.write(
+                f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
             df_original['Наименование товара'] = df_original['Наименование товара'].astype(str).fillna('')
-
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
@@ -376,7 +382,7 @@ def main():
                 start_num_repeats = df_sorted['Код'].max() + 1 if not df_sorted.empty else 1
                 num_rows_repeats = len(df_repeats)
                 df_repeats['Код'] = pd.Series(range(start_num_repeats, start_num_repeats + num_rows_repeats),
-                                               index=df_repeats.index)
+                                              index=df_repeats.index)
 
                 df_sorted = df_sorted.rename(columns={'Количество': 'Кол-во'})
                 df_repeats = df_repeats.rename(columns={'Количество': 'Кол-во'})
@@ -461,7 +467,7 @@ def main():
                             df_repeats_for_excel['Стикер'] = df_repeats_for_excel['Стикер'].apply(get_last_4_digits)
 
                             excel_buffer = customize_excel(df_for_excel, df_repeats_for_excel, fbs_option)
-
+                            # Блок для скачивания Excel
                             if excel_buffer:
                                 st.download_button(
                                     label="Скачать отсортированный Excel файл",

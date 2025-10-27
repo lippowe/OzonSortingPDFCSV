@@ -297,8 +297,8 @@ def main():
                      st.error(f"Error coding cp1251: {e}")
                      st.stop()
 
-         df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
-         df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
+        df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
+        df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
 
             if df_with_order_prefix.empty:
                 st.warning(

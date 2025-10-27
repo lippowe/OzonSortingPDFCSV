@@ -296,7 +296,7 @@ def main():
                         df_original = pd.read_csv(uploaded_csv_file, sep='\t')
                     except Exception:
                         uploaded_csv_file.seek(0)
-                        df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
+                        df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('utf-8')))
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()

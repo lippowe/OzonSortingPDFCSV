@@ -281,7 +281,33 @@ def main():
     uploaded_csv_file = st.file_uploader("Загрузите CSV файл с заказами", type=["csv", "txt"])
     uploaded_pdf_file = st.file_uploader("Загрузите PDF файл со стикерами", type="pdf")
 
+    if uploaded_csv_file:
+        try:
+            df_original = pd.read_csv(uploaded_csv_file, sep=';', encoding='utf-8')  # Попробуйте UTF-8
+            st.write("### DataFrame после чтения из CSV (UTF-8):")
+            st.write(df_original)  # Выводим весь DataFrame
 
+            # Проверка типа данных столбца 'Наименование товара'
+            st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
+
+            # Проверка наличия NaN
+            st.write(
+                f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
+
+        except UnicodeDecodeError:
+            try:
+                df_original = pd.read_csv(uploaded_csv_file, sep=';', encoding='cp1251')  # Попробуйте CP1251
+                st.write("### DataFrame после чтения из CSV (CP1251):")
+                st.write(df_original)
+
+                # Проверка типа данных столбца 'Наименование товара'
+                st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
+
+                # Проверка наличия NaN
+                st.write(
+                    f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
+            except UnicodeDecodeError:
+                st.error("Не удалось определить кодировку CSV файла.  Попробуйте загрузить файл с другой кодировкой.")
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()

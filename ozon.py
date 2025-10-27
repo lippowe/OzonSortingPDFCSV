@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import re
@@ -268,6 +269,54 @@ def customize_excel(df, df_repeats, fbs_option):
         return None
 
 
+def read_csv_with_encoding(uploaded_csv_file):
+    """
+    Пытается прочитать CSV файл с разными кодировками.
+    """
+    encodings_to_try = ['utf-8', 'cp1251', 'latin1']
+    sep_options = [';', ',', '\t']
+
+    for sep in sep_options:
+        for encoding in encodings_to_try:
+            try:
+                df = pd.read_csv(uploaded_csv_file, sep=sep, encoding=encoding)
+                st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
+
+                # === Добавьте эту диагностическую информацию ===
+                st.write("Список столбцов в DataFrame:")
+                st.write(df.columns.tolist()) # Выводим список столбцов
+
+                if 'Наименование товара' not in df.columns:
+                    st.error("Столбец 'Наименование товара' не найден!")
+                    return None # Важно: возвращаем None, если столбца нет
+
+                return df
+            except UnicodeDecodeError:
+                st.write(f"Ошибка UnicodeDecodeError при чтении с кодировкой '{encoding}' и разделителем '{sep}'")
+                pass  # Попробуем следующую кодировку
+            except Exception as e:
+                st.write(f"Другая ошибка при чтении с разделителем '{sep}' и кодировкой '{encoding}': {e}")
+                pass
+
+    # Если ни одна из попыток не удалась, пробуем через StringIO и cp1251 (последний шанс)
+    try:
+        uploaded_csv_file.seek(0)
+        df = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
+
+        # === Добавьте эту диагностическую информацию ===
+        st.write("Файл успешно прочитан с использованием StringIO и кодировки 'cp1251'")
+        st.write("Список столбцов в DataFrame (StringIO):")
+        st.write(df.columns.tolist()) # Выводим список столбцов
+
+        if 'Наименование товара' not in df.columns:
+            st.error("Столбец 'Наименование товара' не найден (StringIO)!")
+            return None  # Важно: возвращаем None, если столбца нет
+        return df
+
+    except Exception as e:
+        st.error(f"Не удалось прочитать CSV файл ни с одной из предложенных кодировок/разделителей. Ошибка: {e}")
+        return None
+
 def main():
     """Основная логика приложения Streamlit."""
     st.set_page_config(layout="wide")
@@ -285,17 +334,23 @@ def main():
         st.success("Файлы успешно загружены!")
 
         try:
-            df_original = pd.read_csv(uploaded_csv_file, sep=';', encoding='utf-8')  # Попробуйте UTF-8
-        except UnicodeDecodeError:
-            try:
-                df_original = pd.read_csv(uploaded_csv_file, sep=';', encoding='cp1251')  # Попробуйте CP1251
-            except UnicodeDecodeError:
-                try:
-                    df_original = pd.read_csv(uploaded_csv_file, sep=';',
-                                              encoding='latin1')  # Попробуйте ISO-8859-1 (latin1)
-                except UnicodeDecodeError:
-                    uploaded_csv_file.seek(0)
-                    df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
+            df_original = read_csv_with_encoding(uploaded_csv_file)
+
+            if df_original is None:
+                st.stop()  # Прекращаем выполнение, если не удалось прочитать CSV
+
+            # Проверка наличия столбца и переименование (если необходимо)
+            if 'Наименование товара' not in df_original.columns:
+                # Пример: переименование столбца "Product Name" в "Наименование товара"
+                if 'Product Name' in df_original.columns:
+                    df_original = df_original.rename(columns={'Product Name': 'Наименование товара'})
+                else:
+                    st.error("Столбец 'Наименование товара' не найден, и не удалось найти альтернативный столбец.")
+                    st.stop()
+            st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
+            st.write(f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
+            df_original['Наименование товара'] = df_original['Наименование товара'].astype(str).fillna('')
+
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()

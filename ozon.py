@@ -290,15 +290,15 @@ def main():
                 df_origin = pd.read_csv(uploaded_csv_file, sep=';', encoding='utf-8')
             except Exception as e:
                 st.warning(f"Error utf-8 coding: {e}. Пробуем cp1251...")
-                try:
-                    uploaded_csv_file_seek(0)
-                    df_origin = pd.read_csv(uploaded_csv_file, sep=';', encoding='cp1251')
-                except Exception as e:
-                    st.error(f"Error coding cp1251: {e}")
-                    st.stop()
+                 try:
+                     uploaded_csv_file_seek(0)
+                     df_origin = pd.read_csv(uploaded_csv_file, sep=';', encoding='cp1251')
+                 except Exception as e:
+                     st.error(f"Error coding cp1251: {e}")
+                     st.stop()
 
-            df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
-            df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
+         df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
+         df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
 
             if df_with_order_prefix.empty:
                 st.warning(

@@ -4,8 +4,7 @@ import re
 import io
 from pypdf import PdfReader, PdfWriter
 from datetime import datetime
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
 
 
@@ -282,21 +281,7 @@ def main():
     uploaded_csv_file = st.file_uploader("Загрузите CSV файл с заказами", type=["csv", "txt"])
     uploaded_pdf_file = st.file_uploader("Загрузите PDF файл со стикерами", type="pdf")
 
-    if uploaded_csv_file and uploaded_pdf_file:
-        st.success("Файлы успешно загружены!")
 
-        try:
-            try:
-                df_original = pd.read_csv(uploaded_csv_file, sep=';')
-            except Exception:
-                try:
-                    df_original = pd.read_csv(uploaded_csv_file, sep=',')
-                except Exception:
-                    try:
-                        df_original = pd.read_csv(uploaded_csv_file, sep='\t')
-                    except Exception:
-                        uploaded_csv_file.seek(0)
-                        df_original = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
             df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()

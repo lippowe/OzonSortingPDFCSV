@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import re
@@ -190,88 +189,157 @@ def customize_excel(df, df_repeats, fbs_option, num_pdf_pages):
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             # === Лист 1: Основной ===
-            sheet_name = 'Лист подбора'
-            df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=5)
+            sheet_name_main = 'Лист подбора'
+            df.to_excel(writer, sheet_name=sheet_name_main, index=False, startrow=5)
+            sheet_main = writer.sheets[sheet_name_main]
 
-            sheet = writer.sheets[sheet_name]
+            # === Заголовки и инфо для основного листа ===
+            sheet_main['B1'] = f'Лист подбора OZON'
+            sheet_main['B1'].font = Font(bold=True, size=16)
 
-            # === Заголовки и инфо ===
-            sheet['B1'] = f'Лист подбора OZON'
-            sheet['B1'].font = Font(bold=True, size=16)
+            sheet_main['B2'] = f'Склад: {fbs_option}'
+            sheet_main['B2'].font = Font(bold=True, size=13)
 
-            sheet['B2'] = f'Склад: {fbs_option}'
-            sheet['B2'].font = Font(bold=True)
+            sheet_main['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
+            sheet_main['B3'].font = Font(bold=True, size=13)
 
-            sheet['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
-            sheet['B3'].font = Font(bold=True)
+            sheet_main['B4'] = f'Количество отправлений: {num_pdf_pages}'
+            sheet_main['B4'].font = Font(bold=True, size=13)
 
-            sheet['B4'] = f'Количество отправлений: {num_pdf_pages}'
-            sheet['B4'].font = Font(bold=True)
+            # === Настройки печати для основного листа ===
+            sheet_main.page_setup.orientation = 'landscape'  # Альбомная ориентация
+            sheet_main.page_setup.paperSize = 9  # Размер A4 (9 - индекс A4)
+            sheet_main.page_margins.left = 0
+            sheet_main.page_margins.right = 0
+            sheet_main.page_margins.top = 0
+            sheet_main.page_margins.bottom = 0
+            sheet_main.page_margins.header = 0
+            sheet_main.page_margins.footer = 0
 
-            # === Стилизация ===
+            # Масштабирование: вписать все столбцы на одну страницу
+            sheet_main.sheet_view.fitToPage = True
+            sheet_main.sheet_view.zoomScale = 100  # Оставляем зум 100%, но fitToPage имеет приоритет
+            sheet_main.sheet_view.zoomToFit = True  # Включаем подгонку по ширине
+
+            # === Лист 2: Повторы ===
+            if not df_repeats.empty:
+                repeats_sheet_name = 'Повторы'
+                # Очищаем повторяющиеся стикеры на листе "Повторы"
+                df_repeats_processed = df_repeats.copy()
+                seen_stickers = set()
+                for index, row in df_repeats_processed.iterrows():
+                    sticker = row['Стикер']
+                    if sticker in seen_stickers:
+                        row['Стикер'] = ''  # Очищаем стикер для повторяющихся записей
+                    else:
+                        seen_stickers.add(sticker)
+                    df_repeats_processed.loc[index] = row
+
+                df_repeats_processed.to_excel(writer, sheet_name=repeats_sheet_name, index=False, startrow=5)
+                sheet_repeats = writer.sheets[repeats_sheet_name]
+
+                # === Заголовки и инфо для листа повторов ===
+                sheet_repeats['B1'] = f'Повторяющиеся заказы'
+                sheet_repeats['B1'].font = Font(bold=True, size=16)
+
+                sheet_repeats['B2'] = f'Склад: {fbs_option}'
+                sheet_repeats['B2'].font = Font(bold=True, size=13)
+
+                sheet_repeats['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
+                sheet_repeats['B3'].font = Font(bold=True, size=13)
+
+                # === Настройки печати для листа повторов ===
+                sheet_repeats.page_setup.orientation = 'landscape'
+                sheet_repeats.page_setup.paperSize = 9
+                sheet_repeats.page_margins.left = 0
+                sheet_repeats.page_margins.right = 0
+                sheet_repeats.page_margins.top = 0
+                sheet_repeats.page_margins.bottom = 0
+                sheet_repeats.page_margins.header = 0
+                sheet_repeats.page_margins.footer = 0
+
+                sheet_repeats.sheet_view.fitToPage = True
+                sheet_repeats.sheet_view.zoomScale = 100
+                sheet_repeats.sheet_view.zoomToFit = True
+
+                # === Стилизация листа повторов ===
+                header_font = Font(bold=True)
+                header_alignment = Alignment(horizontal='center')
+                data_alignment = Alignment(horizontal='left')
+
+                for col_num in range(1, df_repeats_processed.shape[1] + 1):
+                    cell = sheet_repeats.cell(row=6, column=col_num)
+                    cell.font = header_font
+                    cell.alignment = header_alignment
+
+                for row_num in range(7, sheet_repeats.max_row + 1):
+                    for col_num in range(1, df_repeats_processed.shape[1] + 1):
+                        cell = sheet_repeats.cell(row=row_num, column=col_num)
+                        cell.alignment = data_alignment
+                        if sheet_repeats.cell(row=6, column=col_num).value == 'Кол-во':
+                            if isinstance(cell.value, (int, float)) and cell.value > 1:
+                                cell.font = Font(bold=True)
+
+                for col_num in range(1, df_repeats_processed.shape[1] + 1):
+                    column_letter = get_column_letter(col_num)
+                    max_length = 0
+                    for row_num in range(6, sheet_repeats.max_row + 1):
+                        cell = sheet_repeats[column_letter + str(row_num)]
+                        if cell.value is not None:
+                            max_length = max(max_length, len(str(cell.value)))
+                    header_cell = sheet_repeats[column_letter + '6']
+                    if header_cell.value is not None:
+                        max_length = max(max_length, len(str(header_cell.value)))
+                    sheet_repeats.column_dimensions[column_letter].width = max_length + 2
+
+                # === Заморозка области для листа повторов ===
+                sheet_repeats.freeze_panes = 'A7'
+
+            # === Стилизация основного листа ===
             header_font = Font(bold=True)
             header_alignment = Alignment(horizontal='center')
             data_alignment = Alignment(horizontal='left')
 
             for col_num in range(1, df.shape[1] + 1):
-                cell = sheet.cell(row=6, column=col_num)
+                cell = sheet_main.cell(row=6, column=col_num)
                 cell.font = header_font
                 cell.alignment = header_alignment
 
-            for row_num in range(7, sheet.max_row + 1):
+            for row_num in range(7, sheet_main.max_row + 1):
                 for col_num in range(1, df.shape[1] + 1):
-                    cell = sheet.cell(row=row_num, column=col_num)
+                    cell = sheet_main.cell(row=row_num, column=col_num)
                     cell.alignment = data_alignment
 
-                    if sheet.cell(row=6, column=col_num).value == 'Кол-во':
+                    if sheet_main.cell(row=6, column=col_num).value == 'Кол-во':
                         if isinstance(cell.value, (int, float)) and cell.value > 1:
                             cell.font = Font(bold=True)
 
-            for col_num in range(1, 7):
+            for col_num in range(1, df.shape[1] + 1):
                 column_letter = get_column_letter(col_num)
                 max_length = 0
-                for row_num in range(6, sheet.max_row + 1):
-                    cell = sheet[column_letter + str(row_num)]
+                for row_num in range(6, sheet_main.max_row + 1):
+                    cell = sheet_main[column_letter + str(row_num)]
                     if cell.value is not None:
                         max_length = max(max_length, len(str(cell.value)))
-                header_cell = sheet[column_letter + '6']
+                header_cell = sheet_main[column_letter + '6']
                 if header_cell.value is not None:
                     max_length = max(max_length, len(str(header_cell.value)))
 
-                sheet.column_dimensions[column_letter].width = max_length + 2
+                sheet_main.column_dimensions[column_letter].width = max_length + 2
 
-            # === Лист 2: Повторы ===
-            if not df_repeats.empty:
-                repeats_sheet_name = 'Повторы'
-                df_repeats.to_excel(writer, sheet_name=repeats_sheet_name, index=False, startrow=1)
-                repeats_sheet = writer.sheets[repeats_sheet_name]
-
-                repeats_sheet['B1'] = 'Соединённые заказы одному клиенту'
-                repeats_sheet['B1'].font = Font(bold=True, size=16)
-
-                grouped = df_repeats.groupby(['Номер отправления', 'Стикер'])
-                for name, group in grouped:
-                    for i in range(1, len(group)):
-                        index = group.index[i]
-                        excel_row_number = df_repeats.index.get_loc(index) + 3
-
-                        repeats_sheet.cell(row=excel_row_number, column=6).value = None
-
-                for column_cells in repeats_sheet.columns:
-                    max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
-                    repeats_sheet.column_dimensions[column_cells[0].column_letter].width = max_length + 2
-            # === Заморозка области ===
-            sheet.freeze_panes = 'A7'
+            # === Заморозка области для основного листа ===
+            sheet_main.freeze_panes = 'A7'
 
         excel_buffer.seek(0)
         return excel_buffer
-    
+
     except Exception as e:
         st.error(f"Произошла ошибка при настройке Excel файла: {e}")
         st.error(f"Тип ошибки: {type(e)}")
         st.error(f"Аргументы ошибки: {e.args}")
         st.exception(e)
         return None
+
 
 def read_csv_with_encoding(uploaded_csv_file):
     """
@@ -285,7 +353,7 @@ def read_csv_with_encoding(uploaded_csv_file):
         for encoding in encodings_to_try:
             try:
                 df = pd.read_csv(uploaded_csv_file, sep=sep, encoding=encoding)
-                #st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
+                # st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
 
                 name_column = None
                 for col in possible_name_columns:
@@ -295,16 +363,16 @@ def read_csv_with_encoding(uploaded_csv_file):
 
                 if name_column is None:
                     st.error(f"Не найден столбец с наименованием товара. Проверены: {possible_name_columns}")
-                    #st.write("Список столбцов в DataFrame:")
+                    # st.write("Список столбцов в DataFrame:")
                     st.write(df.columns.tolist())
                     return None
 
                 if name_column != 'Наименование товара':
                     df = df.rename(columns={name_column: 'Наименование товара'})
-                    #st.write(f"Столбец '{name_column}' переименован в 'Наименование товара'")
+                    # st.write(f"Столбец '{name_column}' переименован в 'Наименование товара'")
 
-                #st.write("Список столбцов в DataFrame:")
-                #st.write(df.columns.tolist())
+                # st.write("Список столбцов в DataFrame:")
+                # st.write(df.columns.tolist())
                 return df
 
             except UnicodeDecodeError:
@@ -343,6 +411,7 @@ def read_csv_with_encoding(uploaded_csv_file):
         st.error(f"Не удалось прочитать CSV файл ни с одной из предложенных кодировок/разделителей. Ошибка: {e}")
         return None
 
+
 def main():
     """Основная логика приложения Streamlit."""
     st.set_page_config(layout="wide")
@@ -364,8 +433,8 @@ def main():
             if df_original is None:
                 st.stop()
 
-            #st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
-            #st.write(f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
+            # st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
+            # st.write(f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
             df_original['Наименование товара'] = df_original['Наименование товара'].astype(str).fillna('')
 
             df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
@@ -413,11 +482,11 @@ def main():
                 })
 
                 # ==Отладочный вывод DataFrame перед Excel==
-                #st.write("DataFrame основной перед функцией customize_excel:")
-                #st.write(df_for_excel)
+                # st.write("DataFrame основной перед функцией customize_excel:")
+                # st.write(df_for_excel)
 
-                #st.write("DataFrame повторов перед функцией customize_excel:")
-                #st.write(df_repeats_for_excel)
+                # st.write("DataFrame повторов перед функцией customize_excel:")
+                # st.write(df_repeats_for_excel)
 
                 pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file, fbs_prefix)
 

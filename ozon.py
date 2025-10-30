@@ -207,8 +207,8 @@ def customize_excel(df, df_repeats, fbs_option, num_pdf_pages):
             sheet_main['B4'].font = Font(bold=True, size=13)
 
             # === Настройки печати для основного листа ===
-            sheet_main.page_setup.orientation = 'landscape'  # Альбомная ориентация
-            sheet_main.page_setup.paperSize = 9  # Размер A4 (9 - индекс A4)
+            sheet_main.page_setup.orientation = 'landscape'
+            sheet_main.page_setup.paperSize = 9
             sheet_main.page_margins.left = 0
             sheet_main.page_margins.right = 0
             sheet_main.page_margins.top = 0
@@ -216,21 +216,20 @@ def customize_excel(df, df_repeats, fbs_option, num_pdf_pages):
             sheet_main.page_margins.header = 0
             sheet_main.page_margins.footer = 0
 
-            # Масштабирование: вписать все столбцы на одну страницу
             sheet_main.sheet_view.fitToPage = True
-            sheet_main.sheet_view.zoomScale = 100  # Оставляем зум 100%, но fitToPage имеет приоритет
-            sheet_main.sheet_view.zoomToFit = True  # Включаем подгонку по ширине
+            sheet_main.sheet_view.zoomScale = 100
+            sheet_main.sheet_view.zoomToFit = True
 
             # === Лист 2: Повторы ===
             if not df_repeats.empty:
                 repeats_sheet_name = 'Повторы'
-                # Очищаем повторяющиеся стикеры на листе "Повторы"
+
                 df_repeats_processed = df_repeats.copy()
                 seen_stickers = set()
                 for index, row in df_repeats_processed.iterrows():
                     sticker = row['Стикер']
                     if sticker in seen_stickers:
-                        row['Стикер'] = ''  # Очищаем стикер для повторяющихся записей
+                        row['Стикер'] = ''
                     else:
                         seen_stickers.add(sticker)
                     df_repeats_processed.loc[index] = row

@@ -133,7 +133,7 @@ def extract_sticker_data_from_pdf(pdf_file, fbs_prefix):
         for page_num, page in enumerate(reader.pages):
             text = page.extract_text()
             if text:
-                pattern = r"FBS:\s*" + re.escape(fbs_prefix) + r"[\s\S]*?(\d{4})"
+                pattern = r"FBS:\s*" + re.escape(fbs_prefix) + r"\s*(\d+)"
                 match = re.search(pattern, text)
 
                 if match:

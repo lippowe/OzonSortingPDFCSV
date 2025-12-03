@@ -133,12 +133,13 @@ def extract_sticker_data_from_pdf(pdf_file, fbs_prefix):
         for page_num, page in enumerate(reader.pages):
             text = page.extract_text()
             if text:
-                pattern = r"FBS:\s*" + re.escape(fbs_prefix) + r"\s*(\d+)"
+                pattern = r"FBS:\s*" + re.escape(fbs_prefix) + r"[\s\S]*?(\d+)-"
                 match = re.search(pattern, text)
 
                 if match:
                     sticker_number = match.group(1)
                     sticker_data[page_num + 1] = sticker_number
+                    st.write(r"Номер " + sticker_number)
                 else:
                     pass
             else:
@@ -529,7 +530,7 @@ def main():
 
                     if missing_pdf_pages:
                         st.warning(
-                            f"Следующие заказы из подбора листа отмечены как соединёнными: {', '.join(missing_pdf_pages)}. Список будет выписан на новый лист (Повторы) в excel файле.")
+                            f"Следующие стикеры из листа подбора не найдены: {', '.join(missing_pdf_pages)}.")
                     if pdf_sticker_data:
                         st.info(
                             f"Найдены заказы одному клиенту, их номер заказов: {', '.join(pdf_sticker_data.values())}. Эти страницы не будут использованы.")

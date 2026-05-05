@@ -125,7 +125,7 @@ def sort_dataframe(df):
     return df
 
 
-def extract_sticker_data_from_pdf(pdf_file""", fbs_prefix"""):
+def extract_sticker_data_from_pdf(pdf_file):
     """Извлекает данные стикеров из PDF."""
     sticker_data = {}
     try:

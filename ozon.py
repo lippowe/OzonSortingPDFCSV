@@ -125,7 +125,7 @@ def sort_dataframe(df):
     return df
 
 
-def extract_sticker_data_from_pdf(pdf_file, fbs_prefix):
+def extract_sticker_data_from_pdf(pdf_file""", fbs_prefix"""):
     """Извлекает данные стикеров из PDF."""
     sticker_data = {}
     try:
@@ -417,7 +417,7 @@ def main():
     st.title("Обработка заказов Озон: PDF и CSV")
 
     """fbs_option = st.selectbox("Выберите тип FBS", list(FBS_PREFIXES.keys()))
-    //fbs_prefix = FBS_PREFIXES[fbs_option]"""
+    fbs_prefix = FBS_PREFIXES[fbs_option]"""
 
     st.header("1. Загрузка файлов")
     uploaded_csv_file = st.file_uploader("Загрузите CSV файл с заказами", type=["csv", "txt"])
@@ -487,7 +487,7 @@ def main():
                 # st.write("DataFrame повторов перед функцией customize_excel:")
                 # st.write(df_repeats_for_excel)
 
-                pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file, fbs_prefix)
+                pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file """,fbs_prefix""")
 
                 reader = PdfReader(uploaded_pdf_file)
                 num_pdf_pages = len(reader.pages)

@@ -416,8 +416,8 @@ def main():
     st.set_page_config(layout="wide")
     st.title("Обработка заказов Озон: PDF и CSV")
 
-    fbs_option = st.selectbox("Выберите тип FBS", list(FBS_PREFIXES.keys()))
-    fbs_prefix = FBS_PREFIXES[fbs_option]
+    //fbs_option = st.selectbox("Выберите тип FBS", list(FBS_PREFIXES.keys()))
+    //fbs_prefix = FBS_PREFIXES[fbs_option]
 
     st.header("1. Загрузка файлов")
     uploaded_csv_file = st.file_uploader("Загрузите CSV файл с заказами", type=["csv", "txt"])

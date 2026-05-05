@@ -492,9 +492,9 @@ def main():
                 reader = PdfReader(uploaded_pdf_file)
                 num_pdf_pages = len(reader.pages)
 
-                if not pdf_sticker_data:
+                """if not pdf_sticker_data:
                     st.warning(
-                        f"Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: {fbs_prefix} XXXXX'.")
+                        f"Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: {fbs_prefix} XXXXX'.")"""
                 else:
                     pdf_pages_in_csv_order = []
                     missing_pdf_pages = []

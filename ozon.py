@@ -487,7 +487,7 @@ def main():
                 # st.write("DataFrame повторов перед функцией customize_excel:")
                 # st.write(df_repeats_for_excel)
 
-                pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file """,fbs_prefix""")
+                pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file)
 
                 reader = PdfReader(uploaded_pdf_file)
                 num_pdf_pages = len(reader.pages)

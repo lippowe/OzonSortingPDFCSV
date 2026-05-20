@@ -7,11 +7,11 @@ from datetime import datetime
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
 
-FBS_PREFIXES = {
-    "Озон": "204514",
-    "Рига": "2503733",
-    "Плутон": "3021812"
-}
+#FBS_PREFIXES = {
+#    "Озон": "204514",
+#    "Рига": "2503733",
+#    "Плутон": "3021812"
+#}
 
 
 def extract_order_number_prefix(order_string):
@@ -125,8 +125,8 @@ def sort_dataframe(df):
     return df
 
 
-def extract_sticker_data_from_pdf(pdf_file):
-    """Извлекает данные стикеров из PDF."""
+""" def extract_sticker_data_from_pdf(pdf_file):
+    Извлекает данные стикеров из PDF.
     sticker_data = {}
     try:
         reader = PdfReader(pdf_file)
@@ -145,7 +145,7 @@ def extract_sticker_data_from_pdf(pdf_file):
                 pass
     except Exception as e:
         st.error(f"Ошибка при обработке PDF файла: {e}")
-    return sticker_data
+    return sticker_data """
 
 
 def reorder_pdf_pages(pdf_file, page_order_mapping):
@@ -492,10 +492,10 @@ def main():
                 reader = PdfReader(uploaded_pdf_file)
                 num_pdf_pages = len(reader.pages)
 
-                """if not pdf_sticker_data:
+                if not pdf_sticker_data:
                     st.warning(
                         f"Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: {fbs_prefix} XXXXX'.")
-                else:"""
+                else:
                     pdf_pages_in_csv_order = []
                     missing_pdf_pages = []
 

@@ -4,578 +4,209 @@ import re
 import io
 from pypdf import PdfReader, PdfWriter
 from datetime import datetime
-from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
-
-FBS_PREFIXES = {
-    "Озон": "204514",
-    "Рига": "2503733",
-    "Плутон": "3021812"
-}
-
-
-def extract_order_number_prefix(order_string):
-    """Извлекает префикс номера заказа."""
-    if not isinstance(order_string, str):
-        order_string = str(order_string)
-    match = re.search(r'^(\d+)-', order_string)
-    if match:
-        return match.group(1)
-    else:
-        return None
-
-
-def extract_sticker_from_order(order_number):
-    """Извлекает стикер из номера заказа."""
-    if not isinstance(order_number, str):
-        order_number = str(order_number)
-    match = re.search(r'(\d{4})-', order_number)
-    if match:
-        return match.group(1)
-    else:
-        return None
-
-
-def sort_dataframe(df):
-    """Сортирует DataFrame в соответствии с заданными приоритетами."""
-    required_cols = ['Артикул', 'Количество', 'Наименование товара', 'Номер отправления', 'Стикер']
-    for col in required_cols:
-        if col not in df.columns:
-            df[col] = ''
-
-    df['Количество'] = pd.to_numeric(df['Количество'], errors='coerce').fillna(0)
-    original_article_case = df['Артикул'].astype(str)
-    df['Артикул_lower'] = df['Артикул'].astype(str).str.lower()
-    df['Наименование товара_lower'] = df['Наименование товара'].astype(str).str.lower()
-
-    def get_article_core(article):
-        """Извлекает основную часть артикула, убирая суффиксы."""
-        match = re.search(r'([a-z]\d+)$', article)
-        if match:
-            end_of_core = match.start()
-            return article[:end_of_core].strip()
-        else:
-            return article.strip()
-
-    df['article_core'] = df['Артикул_lower'].apply(get_article_core)
-    core_counts = df['article_core'].value_counts()
-    df['core_repeat_count'] = df['article_core'].map(core_counts)
-    sticker_counts = df['Артикул_lower'].value_counts()
-    df['full_sticker_repeat_count'] = df['Артикул_lower'].map(sticker_counts)
-
-    df['shipment_sticker_key'] = df['Номер отправления'].astype(str) + '_' + df['Стикер'].astype(str)
-    shipment_sticker_counts = df['shipment_sticker_key'].value_counts()
-    df['shipment_sticker_repeated'] = df['shipment_sticker_key'].map(shipment_sticker_counts)
-    df['shipment_sticker_repeated_flag'] = df['shipment_sticker_repeated'] > 1
-
-    df['has_k_prefix_num'] = df['Артикул_lower'].str.contains(r'.*[k][2-5]\d*.*', na=False)
-    df['qty_greater_than_1'] = df['Количество'] > 1
-    df['article_repeated'] = df['full_sticker_repeat_count'] > 1
-
-    df['name_article_key'] = df['Наименование товара_lower'].astype(str) + '_' + df['Артикул_lower'].astype(str)
-    name_article_counts = df['name_article_key'].value_counts()
-    df['name_article_repeated'] = df['name_article_key'].map(name_article_counts)
-
-    df['k_num_suffix'] = 0
-    k_match = df['Артикул_lower'].str.extract(r'.*[k]([2-6]\d*)$', expand=False)
-    df['k_num_suffix'] = pd.to_numeric(k_match, errors='coerce').fillna(0)
-
-    df['sort_level'] = 4.0
-    priority1_mask = (df['core_repeat_count'] > 1) & (df['has_k_prefix_num'])
-    df.loc[priority1_mask, 'sort_level'] = 1.0
-    priority2_mask = (df['full_sticker_repeat_count'] > 1) & (df['qty_greater_than_1']) & (df['sort_level'] == 4.0)
-    df.loc[priority2_mask, 'sort_level'] = 2.0
-    priority3_mask = (df['full_sticker_repeat_count'] > 1) & (df['sort_level'] == 4.0)
-    df.loc[priority3_mask, 'sort_level'] = 3.0
-
-    df = df.sort_values(
-        by=[
-            'shipment_sticker_repeated_flag',  # Приоритет 1: Повторение "Номер отправления" и "Стикер"
-            'has_k_prefix_num',  # Приоритет 2: Наличие k/K с числом
-            'k_num_suffix',  # Сортировка по номеру после k/K (убывание)
-            'qty_greater_than_1',  # Приоритет 3: Количество > 1
-            'article_repeated',  # Приоритет 4: Повторяющийся артикул
-            'name_article_repeated',  # Приоритет 5: Повторение "Наименование товара" и "Артикул" (убывание)
-            'sort_level',  # Остальные критерии
-            'article_core',
-            'core_repeat_count',
-            'Количество',
-            'core_repeat_count',
-            'Наименование товара_lower',
-            'Артикул_lower'
-        ],
-        ascending=[
-            False,  # 'shipment_sticker_repeated_flag': Сначала True (повторяется)
-            False,  # 'has_k_prefix_num': Сначала True (есть k/K)
-            False,  # 'k_num_suffix':  Убывание (сначала больше)
-            False,  # 'qty_greater_than_1': Сначала True (Количество > 1)
-            False,  # 'article_repeated': Сначала True (повторяется)
-            False,  # 'name_article_repeated': По убыванию (сначала больше)
-            True,  # 'sort_level':  По возрастанию
-            True,
-            False,
-            False,
-            False,
-            True,
-            True
-        ]
-    )
-
-    df['Артикул'] = original_article_case
-    return df
-
-
-def extract_sticker_data_from_pdf(pdf_file, fbs_prefix):
-    """Извлекает данные стикеров из PDF."""
-    sticker_data = {}
-    try:
-        reader = PdfReader(pdf_file)
-        for page_num, page in enumerate(reader.pages):
-            text = page.extract_text()
-            if text:
-                pattern = r"FBS:\s*" + re.escape(fbs_prefix) + r"[\s\S]*?(\d+)-"
-                match = re.search(pattern, text)
-
-                if match:
-                    sticker_number = match.group(1)
-                    sticker_data[page_num + 1] = sticker_number
-                    st.write(r"Номер " + sticker_number)
-                else:
-                    pass
-            else:
-                pass
-    except Exception as e:
-        st.error(f"Ошибка при обработке PDF файла: {e}")
-    return sticker_data
-
-
-def reorder_pdf_pages(pdf_file, page_order_mapping):
-    """Переупорядочивает страницы PDF."""
-    try:
-        reader = PdfReader(pdf_file)
-        writer = PdfWriter()
-        pages_dict = {i + 1: page for i, page in enumerate(reader.pages)}
-        for original_page_num, _ in page_order_mapping:
-            if original_page_num not in pages_dict:
-                st.error(f"Страница {original_page_num} из PDF не найдена. Проверьте соответствие стикеров.")
-                return None
-        for original_page_num, _ in page_order_mapping:
-            page_to_add = pages_dict[original_page_num]
-            writer.add_page(page_to_add)
-        return writer
-    except Exception as e:
-        st.error(f"Ошибка при переупорядочивании страниц PDF: {e}")
-        return None
-
-
-def get_last_4_digits(value):
-    """Извлекает последние 4 цифры из значения."""
-    if pd.isna(value):
-        return ""
-    value_str = str(value)
-    match = re.search(r'(\d{4})$', value_str)
-    if match:
-        return match.group(0)
-    else:
-        digits_only = "".join(filter(str.isdigit, value_str))
-        if len(digits_only) >= 4:
-            return digits_only[-4:]
-        else:
-            return ""
-
-
-def customize_excel(df, df_repeats, fbs_option, num_pdf_pages):
-    """Настраивает Excel файл."""
-    try:
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            # === Лист 1: Основной ===
-            sheet_name_main = 'Лист подбора'
-            df.to_excel(writer, sheet_name=sheet_name_main, index=False, startrow=5)
-            sheet_main = writer.sheets[sheet_name_main]
-
-            # === Заголовки и инфо для основного листа ===
-            sheet_main['B1'] = f'Лист подбора OZON'
-            sheet_main['B1'].font = Font(bold=True, size=16)
-
-            sheet_main['B2'] = f'Склад: {fbs_option}'
-            sheet_main['B2'].font = Font(bold=True, size=13)
-
-            sheet_main['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
-            sheet_main['B3'].font = Font(bold=True, size=13)
-
-            sheet_main['B4'] = f'Количество отправлений: {num_pdf_pages}'
-            sheet_main['B4'].font = Font(bold=True, size=13)
-
-            # === Настройки печати для основного листа ===
-            sheet_main.page_setup.orientation = 'landscape'
-            sheet_main.page_setup.paperSize = 9
-            sheet_main.page_margins.left = 0
-            sheet_main.page_margins.right = 0
-            sheet_main.page_margins.top = 0
-            sheet_main.page_margins.bottom = 0
-            sheet_main.page_margins.header = 0
-            sheet_main.page_margins.footer = 0
-
-            sheet_main.sheet_view.fitToPage = True
-            sheet_main.sheet_view.zoomScale = 100
-            sheet_main.sheet_view.zoomToFit = True
-
-            # === Лист 2: Повторы ===
-            if not df_repeats.empty:
-                repeats_sheet_name = 'Повторы'
-
-                df_repeats_processed = df_repeats.copy()
-                seen_stickers = set()
-                for index, row in df_repeats_processed.iterrows():
-                    sticker = row['Стикер']
-                    if sticker in seen_stickers:
-                        row['Стикер'] = ''
-                    else:
-                        seen_stickers.add(sticker)
-                    df_repeats_processed.loc[index] = row
-
-                df_repeats_processed.to_excel(writer, sheet_name=repeats_sheet_name, index=False, startrow=5)
-                sheet_repeats = writer.sheets[repeats_sheet_name]
-
-                # === Заголовки и инфо для листа повторов ===
-                sheet_repeats['B1'] = f'Повторяющиеся заказы'
-                sheet_repeats['B1'].font = Font(bold=True, size=16)
-
-                sheet_repeats['B2'] = f'Склад: {fbs_option}'
-                sheet_repeats['B2'].font = Font(bold=True, size=13)
-
-                sheet_repeats['B3'] = 'Дата: ' + datetime.now().strftime("%Y-%m-%d %H:%M")
-                sheet_repeats['B3'].font = Font(bold=True, size=13)
-
-                # === Настройки печати для листа повторов ===
-                sheet_repeats.page_setup.orientation = 'landscape'
-                sheet_repeats.page_setup.paperSize = 9
-                sheet_repeats.page_margins.left = 0
-                sheet_repeats.page_margins.right = 0
-                sheet_repeats.page_margins.top = 0
-                sheet_repeats.page_margins.bottom = 0
-                sheet_repeats.page_margins.header = 0
-                sheet_repeats.page_margins.footer = 0
-
-                sheet_repeats.sheet_view.fitToPage = True
-                sheet_repeats.sheet_view.zoomScale = 100
-                sheet_repeats.sheet_view.zoomToFit = True
-
-                # === Стилизация листа повторов ===
-                header_font = Font(bold=True)
-                header_alignment = Alignment(horizontal='center')
-                data_alignment = Alignment(horizontal='left')
-
-                for col_num in range(1, df_repeats_processed.shape[1] + 1):
-                    cell = sheet_repeats.cell(row=6, column=col_num)
-                    cell.font = header_font
-                    cell.alignment = header_alignment
-
-                for row_num in range(7, sheet_repeats.max_row + 1):
-                    for col_num in range(1, df_repeats_processed.shape[1] + 1):
-                        cell = sheet_repeats.cell(row=row_num, column=col_num)
-                        cell.alignment = data_alignment
-                        if sheet_repeats.cell(row=6, column=col_num).value == 'Кол-во':
-                            if isinstance(cell.value, (int, float)) and cell.value > 1:
-                                cell.font = Font(bold=True)
-
-                for col_num in range(1, df_repeats_processed.shape[1] + 1):
-                    column_letter = get_column_letter(col_num)
-                    max_length = 0
-                    for row_num in range(6, sheet_repeats.max_row + 1):
-                        cell = sheet_repeats[column_letter + str(row_num)]
-                        if cell.value is not None:
-                            max_length = max(max_length, len(str(cell.value)))
-                    header_cell = sheet_repeats[column_letter + '6']
-                    if header_cell.value is not None:
-                        max_length = max(max_length, len(str(header_cell.value)))
-                    sheet_repeats.column_dimensions[column_letter].width = max_length + 2
-
-                # === Заморозка области для листа повторов ===
-                sheet_repeats.freeze_panes = 'A7'
-
-            # === Стилизация основного листа ===
-            header_font = Font(bold=True)
-            header_alignment = Alignment(horizontal='center')
-            data_alignment = Alignment(horizontal='left')
-
-            for col_num in range(1, df.shape[1] + 1):
-                cell = sheet_main.cell(row=6, column=col_num)
-                cell.font = header_font
-                cell.alignment = header_alignment
-
-            for row_num in range(7, sheet_main.max_row + 1):
-                for col_num in range(1, df.shape[1] + 1):
-                    cell = sheet_main.cell(row=row_num, column=col_num)
-                    cell.alignment = data_alignment
-
-                    if sheet_main.cell(row=6, column=col_num).value == 'Кол-во':
-                        if isinstance(cell.value, (int, float)) and cell.value > 1:
-                            cell.font = Font(bold=True)
-
-            for col_num in range(1, df.shape[1] + 1):
-                column_letter = get_column_letter(col_num)
-                max_length = 0
-                for row_num in range(6, sheet_main.max_row + 1):
-                    cell = sheet_main[column_letter + str(row_num)]
-                    if cell.value is not None:
-                        max_length = max(max_length, len(str(cell.value)))
-                header_cell = sheet_main[column_letter + '6']
-                if header_cell.value is not None:
-                    max_length = max(max_length, len(str(header_cell.value)))
-
-                sheet_main.column_dimensions[column_letter].width = max_length + 2
-
-            # === Заморозка области для основного листа ===
-            sheet_main.freeze_panes = 'A7'
-
-        excel_buffer.seek(0)
-        return excel_buffer
-
-    except Exception as e:
-        st.error(f"Произошла ошибка при настройке Excel файла: {e}")
-        st.error(f"Тип ошибки: {type(e)}")
-        st.error(f"Аргументы ошибки: {e.args}")
-        st.exception(e)
-        return None
-
-
-def read_csv_with_encoding(uploaded_csv_file):
-    """
-    Пытается прочитать CSV файл с разными кодировками и определяет столбец 'Наименование товара'.
-    """
-    encodings_to_try = ['utf-8', 'cp1251', 'latin1']
-    sep_options = [';', ',', '\t']
-    possible_name_columns = ['Наименование товара', 'Название товара']
-
-    for sep in sep_options:
-        for encoding in encodings_to_try:
-            try:
-                df = pd.read_csv(uploaded_csv_file, sep=sep, encoding=encoding)
-                # st.write(f"Файл успешно прочитан с кодировкой '{encoding}' и разделителем '{sep}'")
-
-                name_column = None
-                for col in possible_name_columns:
-                    if col in df.columns:
-                        name_column = col
-                        break
-
-                if name_column is None:
-                    st.error(f"Не найден столбец с наименованием товара. Проверены: {possible_name_columns}")
-                    # st.write("Список столбцов в DataFrame:")
-                    st.write(df.columns.tolist())
-                    return None
-
-                if name_column != 'Наименование товара':
-                    df = df.rename(columns={name_column: 'Наименование товара'})
-                    # st.write(f"Столбец '{name_column}' переименован в 'Наименование товара'")
-
-                # st.write("Список столбцов в DataFrame:")
-                # st.write(df.columns.tolist())
-                return df
-
-            except UnicodeDecodeError:
-                st.write(f"Ошибка UnicodeDecodeError при чтении с кодировкой '{encoding}' и разделителем '{sep}'")
-                pass
-            except Exception as e:
-                st.write(f"Другая ошибка при чтении с разделителем '{sep}' и кодировкой '{encoding}': {e}")
-                pass
-
-    try:
-        uploaded_csv_file.seek(0)
-        df = pd.read_csv(io.StringIO(uploaded_csv_file.read().decode('cp1251')))
-
-        name_column = None
-        for col in possible_name_columns:
-            if col in df.columns:
-                name_column = col
+from openpyxl.styles import Alignment, Border, Side, Font
+
+
+def robust_extract_id(text):
+    if not text: return None
+    cleaned_text = text.replace('\n', ' ').replace('\r', ' ')
+    match = re.search(r'(\d{8,12})\s*-', cleaned_text)
+    if match: return match.group(1)
+    all_numbers = re.findall(r'\d{7,12}', cleaned_text)
+    return all_numbers[-1] if all_numbers else None
+
+
+def get_column_by_variants(df, variants):
+    for variant in variants:
+        if variant in df.columns: return variant
+    return None
+
+
+def create_pdf_from_order(pdf_reader, pdf_map, ordered_match_ids):
+    writer = PdfWriter()
+    added_pages = 0
+    current_map = pdf_map.copy()
+    for m_id in ordered_match_ids:
+        for pg_num, pdf_id in list(current_map.items()):
+            if m_id == pdf_id:
+                writer.add_page(pdf_reader.pages[pg_num - 1])
+                del current_map[pg_num]
+                added_pages += 1
                 break
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue(), added_pages
 
-        if name_column is None:
-            st.error(f"Не найден столбец с наименованием товара (StringIO). Проверены: {possible_name_columns}")
-            st.write("Список столбцов в DataFrame (StringIO):")
-            st.write(df.columns.tolist())
-            return None
 
-        if name_column != 'Наименование товара':
-            df = df.rename(columns={name_column: 'Наименование товара'})
-            st.write(f"Столбец '{name_column}' переименован в 'Наименование товара' (StringIO)")
+def save_styled_excel(df, global_total_orders, fbs_name):
+    """Excel с выборочным выравниванием и границами только в шапке."""
+    output = io.BytesIO()
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
 
-        st.write("Файл успешно прочитан с использованием StringIO и кодировки 'cp1251'")
-        st.write("Список столбцов в DataFrame (StringIO):")
-        st.write(df.columns.tolist())
-        return df
+    display_cols = ['№', 'Наименование товара', 'Артикул', 'Кол-во', 'Стикер']
+    final_df = df[[c for c in display_cols if c in df.columns]]
 
-    except Exception as e:
-        st.error(f"Не удалось прочитать CSV файл ни с одной из предложенных кодировок/разделителей. Ошибка: {e}")
-        return None
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        final_df.to_excel(writer, index=False, sheet_name='Лист подбора', startrow=5)
+
+        workbook = writer.book
+        worksheet = writer.sheets['Лист подбора']
+
+        # 1. Заголовки (Строки 2, 3, 4)
+        header_data = [
+            (2, f"Лист подбора ({fbs_name})"),
+            (3, f"Дата: {now_str}"),
+            (4, f"Количество отправлений: {global_total_orders}")
+        ]
+
+        for row_num, text in header_data:
+            worksheet.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=len(final_df.columns))
+            cell = worksheet.cell(row=row_num, column=1)
+            cell.value = text
+            cell.font = Font(bold=True, size=11)
+            cell.alignment = Alignment(horizontal='left')
+
+        # 2. Настройки страницы
+        worksheet.page_setup.orientation = worksheet.ORIENTATION_LANDSCAPE
+        worksheet.page_setup.paperSize = worksheet.PAPERSIZE_A4
+        worksheet.page_margins.left = 0.25
+        worksheet.page_margins.right = 0.25
+        worksheet.page_margins.top = 0.25
+        worksheet.page_margins.bottom = 0.25
+
+        worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+        worksheet.page_setup.fitToWidth = 1
+        worksheet.page_setup.fitToHeight = 0
+
+        # 3. Ширина колонок и поиск индексов
+        sticker_col_idx = -1
+        name_col_idx = -1
+        for idx, col in enumerate(final_df.columns, 1):
+            if col == 'Стикер': sticker_col_idx = idx
+            if col == 'Наименование товара': name_col_idx = idx
+
+        for i, column in enumerate(final_df.columns, 1):
+            col_letter = get_column_letter(i)
+            data_max_len = final_df[column].astype(str).map(len).max()
+            col_width = max(data_max_len, len(column)) + 3
+            if i == name_col_idx:
+                worksheet.column_dimensions[col_letter].width = min(col_width, 80)
+            else:
+                worksheet.column_dimensions[col_letter].width = min(col_width, 40)
+
+        # 4. Оформление, Границы и Выравнивание
+        thin = Side(style='thin')
+        header_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        bold_font = Font(bold=True)
+
+        # Стили выравнивания
+        align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        align_left = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+        for row in worksheet.iter_rows(min_row=6, max_row=len(final_df) + 6, min_col=1, max_col=len(final_df.columns)):
+            for cell in row:
+                # ВЫРАВНИВАНИЕ: если это колонка Наименование, то влево, иначе по центру
+                if cell.column == name_col_idx:
+                    cell.alignment = align_left
+                else:
+                    cell.alignment = align_center
+
+                # ШАПКА (Строка 6)
+                if cell.row == 6:
+                    cell.border = header_border
+                    cell.font = bold_font
+
+                # СТИКЕР (Жирный шрифт в данных)
+                if cell.column == sticker_col_idx and cell.row > 6:
+                    cell.font = bold_font
+
+    return output.getvalue()
 
 
 def main():
-    """Основная логика приложения Streamlit."""
-    st.set_page_config(layout="wide")
-    st.title("Обработка заказов Озон: PDF и CSV")
+    st.set_page_config(layout="wide", page_title="Ozon Sorter Final")
+    st.title("📦 Ozon: Сортировщик")
 
-    fbs_option = st.selectbox("Выберите тип FBS", list(FBS_PREFIXES.keys()))
-    fbs_prefix = FBS_PREFIXES[fbs_option]
+    fbs_choice = st.selectbox("Выберите склад (FBS):", ["Озон", "Рига", "Плутон"])
 
-    st.header("1. Загрузка файлов")
-    uploaded_csv_file = st.file_uploader("Загрузите CSV файл с заказами", type=["csv", "txt"])
-    uploaded_pdf_file = st.file_uploader("Загрузите PDF файл со стикерами", type="pdf")
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        uploaded_csv = st.file_uploader("1. Загрузите CSV", type=["csv", "txt"])
+    with col_u2:
+        uploaded_pdf = st.file_uploader("2. Загрузите PDF", type="pdf")
 
-    if uploaded_csv_file and uploaded_pdf_file:
-        st.success("Файлы успешно загружены!")
-
+    if uploaded_csv and uploaded_pdf:
         try:
-            df_original = read_csv_with_encoding(uploaded_csv_file)
+            bytes_data = uploaded_csv.read()
+            df = None
+            for enc in ['utf-8', 'cp1251', 'latin1']:
+                try:
+                    df = pd.read_csv(io.BytesIO(bytes_data), sep=None, engine='python', encoding=enc)
+                    ship_col = get_column_by_variants(df, ['Номер отправления', 'Номер заказа'])
+                    if ship_col:
+                        df = df.rename(columns={ship_col: 'Номер отправления'})
+                        break
+                except:
+                    continue
 
-            if df_original is None:
-                st.stop()
+            if df is None:
+                st.error("❌ Ошибка чтения CSV");
+                return
 
-            # st.write(f"Тип данных столбца 'Наименование товара': {df_original['Наименование товара'].dtype}")
-            # st.write(f"Количество NaN в столбце 'Наименование товара': {df_original['Наименование товара'].isnull().sum()}")
-            df_original['Наименование товара'] = df_original['Наименование товара'].astype(str).fillna('')
+            qty_col = get_column_by_variants(df, ['Количество', 'Кол-во']) or 'Кол-во'
+            art_col = get_column_by_variants(df, ['Артикул', 'Артикул товара']) or 'Артикул'
+            name_col = get_column_by_variants(df, ['Наименование товара', 'Название товара']) or 'Наименование товара'
 
-            df_original['Стикер'] = df_original['Номер заказа'].apply(extract_order_number_prefix)
-            df_with_order_prefix = df_original.dropna(subset=['Стикер']).copy()
+            df = df.rename(columns={qty_col: 'Кол-во', art_col: 'Артикул', name_col: 'Наименование товара'})
+            df['Кол-во'] = pd.to_numeric(df['Кол-во'], errors='coerce').fillna(1)
+            df['match_id'] = df['Номер отправления'].apply(lambda x: re.sub(r'-.*', '', str(x)).strip().lstrip('0'))
+            df['Стикер'] = df['match_id'].apply(lambda x: x[-4:])
 
-            if df_with_order_prefix.empty:
-                st.warning(
-                    "Не найдено ни одного номера заказа в формате 'число-' в колонке 'Номер заказа' CSV файла. Проверьте формат номеров заказов.")
-            else:
-                df_sorted_by_shipment_sticker = df_with_order_prefix.copy()
-                df_sorted = sort_dataframe(df_sorted_by_shipment_sticker)
+            global_total = df['match_id'].nunique()
 
-                df_sorted = df_sorted.reset_index(drop=True)
+            art_counts = df['Артикул'].value_counts()
+            df_repeats_raw = df[df['Артикул'].isin(art_counts[art_counts > 1].index)].copy()
+            df_main_raw = df[df['Артикул'].isin(art_counts[art_counts == 1].index)].copy()
 
-                df_sorted['Номер отправления для отображения'] = df_sorted['Номер отправления']
-                df_sorted['Стикер для отображения'] = df_sorted['Стикер']
-                df_repeats = df_sorted[df_sorted['shipment_sticker_repeated_flag']].copy()
-                df_repeats = df_repeats.sort_values(by=['Номер отправления'])
-                df_sorted = df_sorted[~df_sorted['shipment_sticker_repeated_flag']].copy()
+            def get_prio(row):
+                if row['Кол-во'] >= 2: return 1
+                if any(s in str(row['Артикул']) for s in ['K2', 'K3', 'K4', 'K5']): return 2
+                return 3
 
-                num_rows = len(df_sorted)
-                df_sorted['Код'] = pd.Series(range(1, num_rows + 1), index=df_sorted.index)
+            df_main_raw['priority'] = df_main_raw.apply(get_prio, axis=1)
+            df_main = df_main_raw.sort_values(by=['priority', 'Наименование товара'], ascending=[True, True])
+            df_main['№'] = range(1, len(df_main) + 1)
 
-                start_num_repeats = df_sorted['Код'].max() + 1 if not df_sorted.empty else 1
-                num_rows_repeats = len(df_repeats)
-                df_repeats['Код'] = pd.Series(range(start_num_repeats, start_num_repeats + num_rows_repeats),
-                                              index=df_repeats.index)
+            df_repeats_raw['counts'] = df_repeats_raw['Артикул'].map(art_counts)
+            df_repeats = df_repeats_raw.sort_values(by=['counts', 'Наименование товара'], ascending=[False, True])
+            df_repeats['№'] = range(1, len(df_repeats) + 1)
 
-                df_sorted = df_sorted.rename(columns={'Количество': 'Кол-во'})
-                df_repeats = df_repeats.rename(columns={'Количество': 'Кол-во'})
+            pdf_reader = PdfReader(uploaded_pdf)
+            pdf_map = {i + 1: robust_extract_id(p.extract_text()).lstrip('0')
+                       for i, p in enumerate(pdf_reader.pages) if robust_extract_id(p.extract_text())}
 
-                desired_columns = ['Код', 'Номер отправления для отображения', 'Наименование товара', 'Артикул',
-                                   'Кол-во', 'Стикер для отображения']
+            st.divider()
 
-                df_for_excel = df_sorted[desired_columns].copy()
-                df_repeats_for_excel = df_repeats[desired_columns].copy()
-                df_for_excel = df_for_excel.rename(columns={
-                    'Номер отправления для отображения': 'Номер отправления',
-                    'Стикер для отображения': 'Стикер'
-                })
+            # Вывод файлов
+            st.subheader(f"📂 Группа №1: Основная")
+            c1_1, c1_2 = st.columns(2)
+            p_main, cnt_m = create_pdf_from_order(pdf_reader, pdf_map, df_main['match_id'].unique())
+            xlsx_main = save_styled_excel(df_main, global_total, fbs_choice)
+            c1_1.download_button(f"📥 PDF Группа №1 ({cnt_m} ст.)", p_main, "1_main.pdf")
+            c1_2.download_button("📥 Excel Группа №1", xlsx_main, "1_main.xlsx")
 
-                df_repeats_for_excel = df_repeats_for_excel.rename(columns={
-                    'Номер отправления для отображения': 'Номер отправления',
-                    'Стикер для отображения': 'Стикер'
-                })
-
-                # ==Отладочный вывод DataFrame перед Excel==
-                # st.write("DataFrame основной перед функцией customize_excel:")
-                # st.write(df_for_excel)
-
-                # st.write("DataFrame повторов перед функцией customize_excel:")
-                # st.write(df_repeats_for_excel)
-
-                pdf_sticker_data = extract_sticker_data_from_pdf(uploaded_pdf_file, fbs_prefix)
-
-                reader = PdfReader(uploaded_pdf_file)
-                num_pdf_pages = len(reader.pages)
-
-                if not pdf_sticker_data:
-                    st.warning(
-                        f"Не удалось извлечь ни одного стикера из PDF файла. Проверьте, соответствует ли формат стикера шаблону 'FBS: {fbs_prefix} XXXXX'.")
-                else:
-                    pdf_pages_in_csv_order = []
-                    missing_pdf_pages = []
-
-                    for index, row in df_sorted.iterrows():
-                        csv_identifier = row['Стикер']
-                        found_page = None
-                        for page_num, pdf_sticker_value in pdf_sticker_data.items():
-                            if pdf_sticker_value == csv_identifier:
-                                found_page = (page_num, pdf_sticker_value)
-                                del pdf_sticker_data[page_num]
-                                break
-
-                        if found_page:
-                            pdf_pages_in_csv_order.append(found_page)
-                        else:
-                            missing_pdf_pages.append(csv_identifier)
-
-                    for index, row in df_repeats.iterrows():
-                        csv_identifier = row['Стикер']
-                        found_page = None
-                        for page_num, pdf_sticker_value in pdf_sticker_data.items():
-                            if pdf_sticker_value == csv_identifier:
-                                found_page = (page_num, pdf_sticker_value)
-                                del pdf_sticker_data[page_num]
-                                break
-
-                        if found_page:
-                            pdf_pages_in_csv_order.append(found_page)
-                        else:
-                            missing_pdf_pages.append(csv_identifier)
-
-                    if missing_pdf_pages:
-                        st.warning(
-                            f"Следующие стикеры из листа подбора не найдены: {', '.join(missing_pdf_pages)}.")
-                    if pdf_sticker_data:
-                        st.info(
-                            f"Найдены заказы одному клиенту, их номер заказов: {', '.join(pdf_sticker_data.values())}. Эти страницы не будут использованы.")
-
-                    if not pdf_pages_in_csv_order:
-                        st.error(
-                            "Не удалось найти соответствие между идентификаторами из CSV и стикерами из PDF. Переупорядочивание PDF невозможно.")
-                    else:
-                        reordered_pdf_writer = reorder_pdf_pages(uploaded_pdf_file, pdf_pages_in_csv_order)
-
-                        if reordered_pdf_writer:
-                            st.success("Стикеры успешно переупорядочены!")
-
-                            st.header("- Лист подбора(Excel) -")
-
-                            df_for_excel['Стикер'] = df_for_excel['Стикер'].apply(get_last_4_digits)
-                            df_repeats_for_excel['Стикер'] = df_repeats_for_excel['Стикер'].apply(get_last_4_digits)
-
-                            excel_buffer = customize_excel(df_for_excel, df_repeats_for_excel, fbs_option,
-                                                           num_pdf_pages)
-                            # Блок для скачивания Excel
-                            if excel_buffer:
-                                st.download_button(
-                                    label="Скачать отсортированный Excel файл",
-                                    data=excel_buffer.getvalue(),
-                                    file_name=f"Repeats_Ozon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                )
-
-                            # Блок для скачивания PDF
-                            pdf_output_buffer = io.BytesIO()
-                            reordered_pdf_writer.write(pdf_output_buffer)
-                            pdf_output_buffer.seek(0)
-                            st.header("- Стикеры(PDF файл) -")
-                            st.write("Ваш новый PDF файл с переупорядоченными страницами:")
-                            st.download_button(
-                                label="Скачать Стикеры",
-                                data=pdf_output_buffer,
-                                file_name=f"Repeats_Ozon-{datetime.now().strftime('%H-%M-%S')}.pdf",
-                                mime="application/pdf"
-                            )
+            if not df_repeats.empty:
+                st.divider()
+                st.subheader(f"📂 Группа №2: Повторы")
+                c2_1, c2_2 = st.columns(2)
+                p_rep, cnt_r = create_pdf_from_order(pdf_reader, pdf_map, df_repeats['match_id'].unique())
+                xlsx_rep = save_styled_excel(df_repeats, global_total, fbs_choice)
+                c2_1.download_button(f"📥 PDF Группа №2 ({cnt_r} ст.)", p_rep, "2_repeats.pdf")
+                c2_2.download_button("📥 Excel Группа №2", xlsx_rep, "2_repeats.xlsx")
 
         except Exception as e:
-            st.error(f"Произошла ошибка при обработке файлов: {e}")
-            st.exception(e)
+            st.error(f"Ошибка: {e}")
 
 
 if __name__ == "__main__":

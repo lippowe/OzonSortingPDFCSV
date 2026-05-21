@@ -126,7 +126,7 @@ def save_styled_excel(df, global_total_orders, fbs_name):
 
 def main():
     st.set_page_config(layout="wide", page_title="Ozon Sorter Final")
-    st.title("📦 Ozon: Сортировщик (Центрирование колонок)")
+    st.title("📦 Ozon: Сортировщик")
 
     fbs_choice = st.selectbox("Выберите склад (FBS):", ["Озон", "Рига", "Плутон"])
 

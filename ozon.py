@@ -170,7 +170,7 @@ def main():
             # Сохраняем полный номер отправления целиком (удаляя пробелы и возможные .0 в конце)
             df['match_id'] = df['Номер отправления'].apply(
                 lambda x: re.sub(r'\s+', '', re.sub(r'\.0$', '', str(x))).strip())
-            df['Стикер'] = df['match_id']  # Отображаем полный номер в колонке "Стикер"
+            df['Стикер'] = df['match_id'].str.extract(r'(\d{4})(?=-)', expand=False).fillna(df['match_id'].str.replace(r'\D', '', regex=True).str[:4])  # Отображаем 4 цифры в колонке "Стикер"
 
             global_total = df['match_id'].nunique()
 

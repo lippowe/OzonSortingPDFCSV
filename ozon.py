@@ -11,8 +11,14 @@ from openpyxl.styles import Alignment, Border, Side, Font
 def robust_extract_id(text):
     if not text: return None
     cleaned_text = text.replace('\n', ' ').replace('\r', ' ')
-    match = re.search(r'(\d{8,12})\s*-', cleaned_text)
-    if match: return match.group(1)
+
+    # Регулярное выражение для поиска полного номера отправления Ozon (например, 12345678-0001-1 или 12345678-0001)
+    # Позволяет обрабатывать случайные пробелы вокруг дефисов
+    match = re.search(r'(\d{7,12}\s*-\s*\d{4}(?:\s*-\s*\d+)?)', cleaned_text)
+    if match:
+        return re.sub(r'\s+', '', match.group(1))  # Удаляем все пробелы внутри номера
+
+    # Резервный поиск просто длинного числа, если дефисы не найдены
     all_numbers = re.findall(r'\d{7,12}', cleaned_text)
     return all_numbers[-1] if all_numbers else None
 
@@ -160,8 +166,11 @@ def main():
 
             df = df.rename(columns={qty_col: 'Кол-во', art_col: 'Артикул', name_col: 'Наименование товара'})
             df['Кол-во'] = pd.to_numeric(df['Кол-во'], errors='coerce').fillna(1)
-            df['match_id'] = df['Номер отправления'].apply(lambda x: re.sub(r'-.*', '', str(x)).strip().lstrip('0'))
-            df['Стикер'] = df['match_id'].apply(lambda x: x[-4:])
+
+            # Сохраняем полный номер отправления целиком (удаляя пробелы и возможные .0 в конце)
+            df['match_id'] = df['Номер отправления'].apply(
+                lambda x: re.sub(r'\s+', '', re.sub(r'\.0$', '', str(x))).strip())
+            df['Стикер'] = df['match_id'].str.extract(r'(\d{4})(?=-)', expand=False).fillna(df['match_id'].str.replace(r'\D', '', regex=True).str[:4])  # Отображаем 4 цифры в колонке "Стикер"
 
             global_total = df['match_id'].nunique()
 
@@ -183,7 +192,8 @@ def main():
             df_repeats['№'] = range(1, len(df_repeats) + 1)
 
             pdf_reader = PdfReader(uploaded_pdf)
-            pdf_map = {i + 1: robust_extract_id(p.extract_text()).lstrip('0')
+            # Извлекаем полные номера отправлений из PDF без удаления ведущих нулей
+            pdf_map = {i + 1: robust_extract_id(p.extract_text())
                        for i, p in enumerate(pdf_reader.pages) if robust_extract_id(p.extract_text())}
 
             st.divider()
